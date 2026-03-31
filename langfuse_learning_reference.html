@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Langfuse Learning Notes</title>
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#121a33;
+      --panel-2:#172041;
+      --text:#ecf2ff;
+      --muted:#b9c6ea;
+      --accent:#7cc4ff;
+      --accent-2:#8ef0c8;
+      --warn:#ffd37c;
+      --code:#0a0f1f;
+      --border:#2b3b72;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background:linear-gradient(180deg,#08101c,#0d1630 30%,#0a1226);
+      color:var(--text);
+      line-height:1.55;
+    }
+    .wrap{max-width:1100px;margin:0 auto;padding:32px 22px 60px}
+    h1,h2,h3{line-height:1.2;margin:0 0 12px}
+    h1{font-size:2.2rem}
+    h2{font-size:1.45rem;margin-top:28px;padding-top:10px;border-top:1px solid var(--border)}
+    h3{font-size:1.05rem;margin-top:18px}
+    p{margin:8px 0 12px;color:var(--muted)}
+    .hero{
+      background:linear-gradient(135deg,rgba(124,196,255,.18),rgba(142,240,200,.08));
+      border:1px solid var(--border);
+      border-radius:18px;
+      padding:24px;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+      margin-bottom:24px;
+    }
+    .hero p{font-size:1.03rem}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:16px 18px;
+    }
+    .card strong{color:var(--text)}
+    .tag{
+      display:inline-block;
+      padding:3px 10px;
+      border-radius:999px;
+      background:rgba(124,196,255,.12);
+      border:1px solid rgba(124,196,255,.35);
+      color:var(--accent);
+      font-size:.84rem;
+      margin:4px 6px 0 0;
+    }
+    code, pre{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    code.inline{
+      background:rgba(255,255,255,.06);
+      padding:2px 6px;
+      border-radius:6px;
+      color:#d7e8ff;
+    }
+    pre{
+      background:var(--code);
+      border:1px solid #23315f;
+      color:#dbe6ff;
+      padding:14px 16px;
+      border-radius:14px;
+      overflow:auto;
+      white-space:pre-wrap;
+      word-break:break-word;
+      margin:10px 0 14px;
+    }
+    ul{margin:8px 0 12px 18px;color:var(--muted)}
+    li{margin:6px 0}
+    .table-wrap{overflow:auto}
+    table{
+      width:100%;
+      border-collapse:collapse;
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      overflow:hidden;
+      margin:10px 0 18px;
+    }
+    th,td{
+      padding:12px 14px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      text-align:left;
+      vertical-align:top;
+    }
+    th{
+      background:var(--panel-2);
+      color:var(--text);
+      font-weight:600;
+    }
+    tr:last-child td{border-bottom:none}
+    .note{
+      border-left:4px solid var(--warn);
+      padding:10px 14px;
+      background:rgba(255,211,124,.08);
+      border-radius:10px;
+      color:#ffe8b3;
+      margin:12px 0 16px;
+    }
+    .ok{
+      border-left:4px solid var(--accent-2);
+      padding:10px 14px;
+      background:rgba(142,240,200,.08);
+      border-radius:10px;
+      color:#dfffee;
+      margin:12px 0 16px;
+    }
+    .small{font-size:.94rem}
+    .footer{
+      margin-top:32px;
+      padding-top:18px;
+      border-top:1px solid var(--border);
+      color:#9db0df;
+      font-size:.92rem;
+    }
+  </style>
+
+<style>
+.tabs{display:flex;gap:10px;margin-bottom:16px}
+.tab-btn{padding:8px 14px;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--panel)}
+.tab-btn.active{background:var(--panel-2);color:var(--accent)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+</style>
+
+<script>
+function showTab(id){
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.getElementById(id+'-btn').classList.add('active');
+}
+</script>
+
+</head>
+<body>
+  
+<div class="wrap">
+<div class="tabs">
+  <div id="main-btn" class="tab-btn active" onclick="showTab('main')">Full Guide</div>
+  <div id="cheat-btn" class="tab-btn" onclick="showTab('cheat')">Cheat Sheet</div>
+</div>
+
+<div id="main" class="tab-content active">
+
+    <section class="hero">
+      <h1>Langfuse Learning Notes</h1>
+      <p>
+        A practical reference for how Langfuse fits into the Travel Copilot project:
+        sessions, traces, observations, prompts, LangChain/OpenAI integration,
+        when to use <code class="inline">@observe</code>, and when not to.
+      </p>
+      <div>
+        <span class="tag">Langfuse</span>
+        <span class="tag">Tracing</span>
+        <span class="tag">Sessions</span>
+        <span class="tag">Observations</span>
+        <span class="tag">Prompt Management</span>
+        <span class="tag">LangChain</span>
+      </div>
+    </section>
+
+    <h2>1. Big Picture</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Session</h3>
+        <p>One complete user journey. Example: planning one trip across multiple turns.</p>
+      </div>
+      <div class="card">
+        <h3>Trace</h3>
+        <p>One request/turn inside that session. Example: one user message and the system response.</p>
+      </div>
+      <div class="card">
+        <h3>Observation</h3>
+        <p>One step inside the trace. Example: parse input, weather lookup, currency lookup, LLM call.</p>
+      </div>
+    </div>
+
+    <pre>Session: travel-123
+├── Trace 1: "I want to travel next week for 4 days"
+│   ├── parse_input
+│   └── update_state
+├── Trace 2: "Make it Delhi"
+│   ├── parse_input
+│   └── update_state
+└── Trace 3: "Show itinerary under 30000 INR in EUR"
+    ├── parse_input
+    ├── weather_lookup
+    ├── currency_lookup
+    ├── fetch_prompt
+    └── ChatOpenAI</pre>
+
+    <h2>2. What Langfuse Does in This Project</h2>
+    <ul>
+      <li>Groups all turns under one <strong>session_id</strong>.</li>
+      <li>Logs each user turn as a trace.</li>
+      <li>Logs each internal step as an observation/span.</li>
+      <li>Fetches the system prompt from Langfuse Prompt Management.</li>
+      <li>Tracks model calls, tokens, and cost via LangChain + OpenAI integration.</li>
+      <li>Makes debugging easier because each step can show input, output, metadata, errors, and timing.</li>
+    </ul>
+
+    <h2>3. Core Langfuse Functions and What They Mean</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Function / Integration</th>
+            <th>Purpose</th>
+            <th>Typical Use</th>
+            <th>Recommended?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="inline">get_client()</code></td>
+            <td>Initialize and access the Langfuse client.</td>
+            <td>Prompt fetch, current observation updates, manual observation creation.</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td><code class="inline">propagate_attributes(...)</code></td>
+            <td>Attach session/user/tags/global metadata to everything inside a scope.</td>
+            <td>Top-level request/turn wrapper.</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td><code class="inline">@observe(...)</code></td>
+            <td>Low-noise automatic observation for a function.</td>
+            <td>Business logic functions like parsing, currency lookup, weather lookup.</td>
+            <td>Strongly recommended</td>
+          </tr>
+          <tr>
+            <td><code class="inline">start_as_current_observation(...)</code></td>
+            <td>Manually create an observation/span using a context manager.</td>
+            <td>Special cases requiring tight manual nesting/control.</td>
+            <td>Sometimes</td>
+          </tr>
+          <tr>
+            <td><code class="inline">start_observation(...)</code></td>
+            <td>Manual observation without <code class="inline">with</code>.</td>
+            <td>Long-running or split lifecycle work that ends later.</td>
+            <td>Rare</td>
+          </tr>
+          <tr>
+            <td><code class="inline">obs.update(...)</code></td>
+            <td>Update the current observation object with output, metadata, level, usage.</td>
+            <td>Enrich a manual observation after work completes.</td>
+            <td>Yes, when doing manual tracing</td>
+          </tr>
+          <tr>
+            <td><code class="inline">update_current_observation(...)</code></td>
+            <td>Update the active observation without passing the observation object around.</td>
+            <td>Decorator-based tracing with custom metadata/output.</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td><code class="inline">get_prompt(...)</code></td>
+            <td>Fetch prompt from Langfuse Prompt Management.</td>
+            <td>System prompts, versioned prompts, prompt variables/config.</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td><code class="inline">CallbackHandler()</code></td>
+            <td>LangChain auto-tracing for chain + model calls.</td>
+            <td>LLM calls, prompt formatting, token/cost tracking.</td>
+            <td>Yes</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>4. Reserved Fields vs Custom Fields</h2>
+    <p>
+      Langfuse has some fields with special meaning. These are not “put anywhere” fields.
+      They should be used only where Langfuse expects them.
+    </p>
+
+    <h3>Reserved / special fields</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Meaning</th><th>Where it belongs</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code class="inline">session_id</code></td><td>Groups traces into one session</td><td><code class="inline">propagate_attributes(...)</code></td></tr>
+          <tr><td><code class="inline">user_id</code></td><td>Identifies the end user</td><td><code class="inline">propagate_attributes(...)</code></td></tr>
+          <tr><td><code class="inline">trace_name</code></td><td>Name of the overall trace</td><td><code class="inline">propagate_attributes(...)</code></td></tr>
+          <tr><td><code class="inline">tags</code></td><td>Labels for filtering</td><td><code class="inline">propagate_attributes(...)</code></td></tr>
+          <tr><td><code class="inline">name</code></td><td>Name of the observation</td><td><code class="inline">@observe(...)</code> or <code class="inline">start_as_current_observation(...)</code></td></tr>
+          <tr><td><code class="inline">as_type</code></td><td>Observation type</td><td><code class="inline">@observe(...)</code> or <code class="inline">start_as_current_observation(...)</code></td></tr>
+          <tr><td><code class="inline">input</code></td><td>Input to the observation</td><td>Observation create/update</td></tr>
+          <tr><td><code class="inline">output</code></td><td>Output of the observation</td><td>Observation update</td></tr>
+          <tr><td><code class="inline">model</code></td><td>Model name for generation</td><td>Generation observation / framework integration</td></tr>
+          <tr><td><code class="inline">usage_details</code></td><td>Token/cost-related usage data</td><td>Generation update / integration</td></tr>
+          <tr><td><code class="inline">level</code></td><td>Log level like warning/error</td><td>Observation update</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Custom fields</h3>
+    <p>
+      Your own fields should usually live inside <code class="inline">metadata</code>. That is your safe flexible area.
+    </p>
+
+    <pre>metadata = {
+  "step_type": "tool",
+  "tool_name": "currency_mcp",
+  "tool_status": "success",
+  "from_currency": "USD",
+  "to_currency": "EUR"
+}</pre>
+
+    <div class="note">
+      <strong>Rule:</strong> Reserved fields tell Langfuse how to understand the trace.
+      Metadata tells <em>you</em> how to understand your system.
+    </div>
+
+    <h2>5. <code class="inline">propagate_attributes(...)</code></h2>
+    <p>
+      This does <strong>not</strong> create a trace or a span. It only sets context for everything inside the block.
+    </p>
+    <pre>with propagate_attributes(
+    session_id="travel-123",
+    user_id="user-1",
+    tags=["travel-copilot", "openai"],
+    metadata={"flow_stage": "show_itinerary", "city": "Delhi"},
+):
+    ...</pre>
+
+    <h3>Use it for</h3>
+    <ul>
+      <li><code class="inline">session_id</code></li>
+      <li><code class="inline">user_id</code></li>
+      <li>Global tags</li>
+      <li>High-level metadata like provider, flow stage, city</li>
+    </ul>
+
+    <h3>Do not use it for</h3>
+    <ul>
+      <li>Per-step output</li>
+      <li>Per-step tool payloads unless you intentionally want them on every child observation</li>
+    </ul>
+
+    <h2>6. <code class="inline">start_as_current_observation(...)</code></h2>
+    <p>
+      This manually creates an observation (usually a span). If there is no active trace yet,
+      the first observation starts a new trace automatically.
+    </p>
+
+    <pre>with langfuse.start_as_current_observation(
+    name="currency_lookup",
+    as_type="span",
+    input={"amount": 100, "from": "USD", "to": "EUR"},
+) as obs:
+    result = call_tool()
+    obs.update(output=result)</pre>
+
+    <h3>Best for</h3>
+    <ul>
+      <li>Manual custom nesting</li>
+      <li>Explicit control over a root turn span</li>
+      <li>Cases where <code class="inline">@observe</code> is not enough</li>
+    </ul>
+
+    <h3>Why it felt noisy</h3>
+    <p>
+      Because it is the manual form. It gives control, but adds boilerplate. In most app code,
+      <code class="inline">@observe</code> is cleaner.
+    </p>
+
+    <h2>7. <code class="inline">start_observation(...)</code></h2>
+    <p>
+      This is the manual non-context-manager version. You start it now and end it later yourself.
+    </p>
+
+    <pre>obs = langfuse.start_observation(name="long_running_step")
+# do work across different code paths
+obs.update(output={"status": "done"})
+obs.end()</pre>
+
+    <h3>Use it for</h3>
+    <ul>
+      <li>Long-running background jobs</li>
+      <li>Distributed/async workflows</li>
+      <li>When start and end happen far apart</li>
+    </ul>
+
+    <h3>Do not use it for</h3>
+    <ul>
+      <li>Normal request-time parsing/tool/LLM steps in this project</li>
+    </ul>
+
+    <h2>8. <code class="inline">obs.update(...)</code> and <code class="inline">update_current_observation(...)</code></h2>
+    <p>
+      These enrich an observation after it starts.
+    </p>
+
+    <pre># If you have the observation object
+obs.update(
+    output={"converted_amount": 86.82},
+    metadata={"tool_name": "currency_mcp", "tool_status": "success"}
+)
+
+# If using @observe and want to update the active span
+langfuse.update_current_observation(
+    metadata={"tool_name": "currency_mcp"},
+    output={"converted_amount": 86.82}
+)</pre>
+
+    <h3>Typical things to update</h3>
+    <ul>
+      <li><code class="inline">output</code></li>
+      <li><code class="inline">metadata</code></li>
+      <li><code class="inline">level</code> (warning/error)</li>
+      <li><code class="inline">usage_details</code> for manual generation usage</li>
+    </ul>
+
+    <h2>9. <code class="inline">@observe(...)</code></h2>
+    <p>
+      This is the low-noise, recommended way to instrument your own functions.
+      It automatically creates an observation, captures inputs/outputs, timing, and errors.
+    </p>
+
+    <pre>from langfuse import observe, get_client
+
+langfuse = get_client()
+
+@observe(name="travel.currency.lookup")
+async def maybe_convert_currency(user_query: str) -> dict | None:
+    langfuse.update_current_observation(
+        metadata={"step_type": "tool", "tool_name": "currency_mcp"}
+    )
+    return {"amount": 100, "from_currency": "USD", "to_currency": "EUR", "converted_amount": 86.82}</pre>
+
+    <h3>Values you can pass to <code class="inline">@observe</code></h3>
+    <ul>
+      <li><code class="inline">name</code> — always set this in practice</li>
+      <li><code class="inline">as_type</code> — usually <code class="inline">span</code>; sometimes <code class="inline">generation</code></li>
+    </ul>
+
+    <h3>Best practice</h3>
+    <ul>
+      <li>Always use semantic names like <code class="inline">travel.weather.lookup</code>, not raw function names like <code class="inline">process</code>.</li>
+      <li>Add custom metadata inside the function using <code class="inline">update_current_observation(...)</code>.</li>
+    </ul>
+
+    <h2>10. Observation Types (<code class="inline">as_type</code>)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Meaning</th><th>Use in this project?</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code class="inline">span</code></td><td>Generic step</td><td>Yes, most custom app steps</td></tr>
+          <tr><td><code class="inline">generation</code></td><td>LLM/model generation step</td><td>Usually let LangChain/OpenAI integration handle this</td></tr>
+          <tr><td><code class="inline">event</code></td><td>Lightweight point-in-time event</td><td>Rare</td></tr>
+          <tr><td><code class="inline">tool</code></td><td>Tool execution semantics</td><td>Optional semantic choice for MCP calls</td></tr>
+          <tr><td><code class="inline">chain</code></td><td>Workflow/chain step</td><td>Usually auto-created by LangChain integration</td></tr>
+          <tr><td><code class="inline">retriever</code></td><td>Retrieval step</td><td>Future RAG use</td></tr>
+          <tr><td><code class="inline">embedding</code></td><td>Embedding generation</td><td>Future vector use</td></tr>
+          <tr><td><code class="inline">agent</code></td><td>Agent decision-making step</td><td>Future agentic workflow</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="ok">
+      <strong>Practical rule:</strong> In this project, use <code class="inline">span</code> for your own steps and let the LangChain callback handle the model-generation details.
+    </div>
+
+    <h2>11. Prompt Integration</h2>
+    <p>
+      Langfuse is not only for tracing. It is also your prompt registry.
+    </p>
+
+    <pre>client = get_client()
+prompt = client.get_prompt("travel_copilot_system")
+compiled_prompt = prompt.compile(
+    session_state="...",
+    user_request="...",
+    tool_context="...",
+    guardrails="..."
+)</pre>
+
+    <h3>Why this matters</h3>
+    <ul>
+      <li>Prompt text is not hardcoded.</li>
+      <li>Prompt versions can be changed in Langfuse UI.</li>
+      <li>Prompt usage can be associated with traces/generations.</li>
+    </ul>
+
+    <h2>12. LangChain / OpenAI Integration</h2>
+    <p>
+      For LLM calls, the best practice is to use the native Langfuse LangChain integration
+      instead of manually tracing model calls.
+    </p>
+
+    <pre>from langfuse.langchain import CallbackHandler
+
+handler = CallbackHandler()
+response = chain.invoke(
+    prompt_variables,
+    config={
+        "callbacks": [handler],
+        "run_name": "travel_itinerary_generation"
+    }
+)</pre>
+
+    <h3>This gives you</h3>
+    <ul>
+      <li>PromptTemplate step</li>
+      <li>ChatOpenAI step</li>
+      <li>Token usage</li>
+      <li>Cost</li>
+      <li>Chain nesting</li>
+    </ul>
+
+    <div class="note">
+      Do not manually create a separate generation observation for the same LangChain/OpenAI call,
+      or the trace can become confusing and look like duplicated cost.
+    </div>
+
+    <h2>13. Why Cost Looked “Double”</h2>
+    <p>
+      Langfuse often shows cost at multiple levels of the hierarchy:
+    </p>
+    <ul>
+      <li><strong>Leaf level</strong>: actual OpenAI call cost</li>
+      <li><strong>Parent level</strong>: rolled-up total from child observations</li>
+    </ul>
+    <p>
+      So the parent cost is not an extra bill. It is an aggregate.
+    </p>
+
+    <h2>14. Best-Practice Integration Pattern for This App</h2>
+    <pre>with propagate_attributes(
+    session_id=state.session_id,
+    user_id=state.user_id,
+    tags=["travel-copilot", provider],
+    metadata={"flow_stage": state.flow_stage},
+):
+    # decorated business logic functions
+    parse_input(...)
+    maybe_get_weather(...)
+    maybe_convert_currency(...)
+    get_prompt(...)
+
+    # LangChain + CallbackHandler for LLM
+    chain.invoke(...)</pre>
+
+    <h3>Recommended split</h3>
+    <ul>
+      <li><strong>propagate_attributes</strong> → top-level session/user/global context</li>
+      <li><strong>@observe</strong> → your business logic</li>
+      <li><strong>update_current_observation</strong> → extra metadata/output inside observed functions</li>
+      <li><strong>CallbackHandler</strong> → model/framework tracing</li>
+      <li><strong>get_prompt</strong> → prompt management</li>
+    </ul>
+
+    <h2>15. What Not to Overuse</h2>
+    <ul>
+      <li>Do not wrap every small line with manual <code class="inline">with start_as_current_observation(...)</code>.</li>
+      <li>Do not put all custom keys at the top level; put them in <code class="inline">metadata</code>.</li>
+      <li>Do not manually create extra LLM generation spans if LangChain callback already traces the model call.</li>
+      <li>Do not use <code class="inline">start_observation(...)</code> for normal request-time business logic.</li>
+    </ul>
+
+    <h2>16. Final Cheat Sheet</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>I want to...</th><th>Use</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Group all turns of one conversation</td><td><code class="inline">propagate_attributes(session_id=...)</code></td></tr>
+          <tr><td>Trace one business logic function cleanly</td><td><code class="inline">@observe(name="...")</code></td></tr>
+          <tr><td>Add tool-specific metadata inside that function</td><td><code class="inline">update_current_observation(metadata={...})</code></td></tr>
+          <tr><td>Fetch prompt from Langfuse</td><td><code class="inline">get_prompt(...)</code></td></tr>
+          <tr><td>Trace LangChain/OpenAI calls, tokens, cost</td><td><code class="inline">CallbackHandler()</code></td></tr>
+          <tr><td>Manually control a custom nested step</td><td><code class="inline">start_as_current_observation(...)</code></td></tr>
+          <tr><td>Start now and end much later</td><td><code class="inline">start_observation(...)</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      Prepared as a project reference for the Travel Copilot codebase. Intended as a practical,
+      reusable Langfuse guide for future development and refactoring.
+    </div>
+  
+</div>
+
+<div id="cheat" class="tab-content">
+
+<h2>Langfuse Quick Cheat Sheet</h2>
+
+<h3>Minimal Pattern</h3>
+<pre>
+with propagate_attributes(session_id="..."):
+    answer_user(...)
+</pre>
+
+<h3>@observe Equivalent (Important)</h3>
+<p><strong>@observe internally does:</strong></p>
+<pre>
+with start_as_current_observation(name="...") as obs:
+    obs.update(input=function_args)
+    result = function(...)
+    obs.update(output=result)
+</pre>
+
+<h3>How to Add More Values in @observe</h3>
+
+<p>You enrich the same observation using:</p>
+
+<pre>
+from langfuse import get_client
+langfuse = get_client()
+
+@observe(name="travel.currency.lookup")
+def func():
+    langfuse.update_current_observation(
+        metadata={
+            "tool_name": "currency_mcp",
+            "status": "success"
+        },
+        output={"extra": "data"}
+    )
+</pre>
+
+<h3>Key Rules</h3>
+<ul>
+<li>Use <code>name</code> always</li>
+<li>Use <code>metadata</code> for custom fields</li>
+<li>Use <code>CallbackHandler</code> for LLM</li>
+<li>Use <code>propagate_attributes</code> once per request</li>
+</ul>
+
+<h3>Golden Mental Model</h3>
+<pre>
+Session → propagate_attributes
+Trace → first observe/span
+Step → @observe
+Details → update_current_observation
+</pre>
+
+</div>
+
+</div>
+</body>
+
+</html>

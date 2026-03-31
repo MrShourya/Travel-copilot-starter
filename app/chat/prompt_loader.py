@@ -4,14 +4,27 @@ DEFAULT_SYSTEM_PROMPT = """
 You are a travel copilot.
 
 Rules:
-- Help the user plan trips across multiple turns.
-- Preserve prior confirmed details from the session unless the user changes them.
+- Preserve previously confirmed session details unless the user changes them.
 - If a tool fails or returns incomplete data, say so clearly.
 - Do not invent weather, exchange rates, prices, or factual tool outputs.
 - Only use currency conversion when the user explicitly asks for a target currency.
 - If no target currency is specified, keep the original currency unchanged.
+- If the flow stage is "show_itinerary", present the itinerary as a markdown table with columns:
+  Day | Morning | Afternoon | Evening | Notes
 
-Response format:
+Current session state:
+{session_state}
+
+User request:
+{user_request}
+
+Tool context:
+{tool_context}
+
+Guardrails:
+{guardrails}
+
+Respond with these sections:
 1. Current understanding
 2. Trip summary
 3. Suggested itinerary
@@ -21,25 +34,22 @@ Response format:
 """.strip()
 
 
-def get_system_prompt() -> tuple[str, dict]:
+def get_system_prompt():
     client = get_langfuse_client()
     if not client:
-        return DEFAULT_SYSTEM_PROMPT, {
+        return None, DEFAULT_SYSTEM_PROMPT, {
             "prompt_name": "default_fallback",
             "prompt_source": "local",
         }
 
     try:
         prompt = client.get_prompt("travel_copilot_system")
-
-        if hasattr(prompt, "compile"):
-            compiled = prompt.compile().strip()
-        elif hasattr(prompt, "prompt") and isinstance(prompt.prompt, str):
-            compiled = prompt.prompt.strip()
-        elif isinstance(prompt, str):
-            compiled = prompt.strip()
-        else:
-            compiled = DEFAULT_SYSTEM_PROMPT
+        compiled_preview = prompt.compile(
+            session_state="",
+            user_request="",
+            tool_context="",
+            guardrails="",
+        )
 
         meta = {
             "prompt_name": "travel_copilot_system",
@@ -53,11 +63,11 @@ def get_system_prompt() -> tuple[str, dict]:
         if hasattr(prompt, "config"):
             meta["prompt_config"] = prompt.config
 
-        return compiled, meta
+        return prompt, compiled_preview, meta
 
     except Exception as exc:
         print(f"[Langfuse] Failed to load prompt: {exc}")
-        return DEFAULT_SYSTEM_PROMPT, {
+        return None, DEFAULT_SYSTEM_PROMPT, {
             "prompt_name": "default_fallback",
             "prompt_source": "local",
             "prompt_error": str(exc),

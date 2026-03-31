@@ -15,6 +15,7 @@ import streamlit as st
 from app.chat.agent import answer_user
 from app.chat.session_state import TravelSessionState
 from app.config.settings import settings
+from app.ui.rendering import extract_first_markdown_table
 
 st.set_page_config(page_title="Travel Copilot", page_icon="✈️", layout="wide")
 st.title("✈️ Multi-LLM Travel Copilot")
@@ -44,12 +45,18 @@ with st.sidebar:
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
 
     st.subheader("Session")
-    st.code(st.session_state.travel_session_id)
-    st.json(st.session_state.travel_state.to_dict())
+    session_placeholder = st.empty()
+    session_placeholder.json(st.session_state.travel_state.to_dict())
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        if msg["role"] == "assistant":
+            table_df = extract_first_markdown_table(msg["content"])
+            if table_df is not None:
+                st.table(table_df)
+            st.markdown(msg["content"])
+        else:
+            st.markdown(msg["content"])
 
 user_input = st.chat_input("Ask about your trip...")
 
@@ -69,9 +76,15 @@ if user_input:
                 )
             )
 
-            # rebuild dataclass instance from returned dict
             state_dict = result["state"]
             st.session_state.travel_state = TravelSessionState(**state_dict)
+
+            # refresh sidebar session snapshot immediately
+            session_placeholder.json(st.session_state.travel_state.to_dict())
+
+            table_df = extract_first_markdown_table(result["answer"])
+            if table_df is not None:
+                st.table(table_df)
 
             st.markdown(result["answer"])
 
@@ -80,6 +93,9 @@ if user_input:
 
             with st.expander("Session state"):
                 st.json(result["state"])
+
+            with st.expander("Prompt metadata"):
+                st.json(result["prompt_meta"])
 
     st.session_state.messages.append(
         {"role": "assistant", "content": result["answer"]}

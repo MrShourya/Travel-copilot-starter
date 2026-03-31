@@ -1,14 +1,49 @@
 from contextlib import nullcontext
 
-from langfuse import get_client, propagate_attributes
+from langfuse import propagate_attributes
+
+from app.observability.langfuse_client import get_langfuse_client
 
 
-def get_langfuse():
-    try:
-        return get_client()
-    except Exception as exc:
-        print(f"[Langfuse] Failed to initialize client: {exc}")
-        return None
+class _CombinedContext:
+    def __init__(self, attr_ctx, obs_ctx, input_payload=None, metadata=None):
+        self.attr_ctx = attr_ctx
+        self.obs_ctx = obs_ctx
+        self.input_payload = input_payload or {}
+        self.metadata = metadata or {}
+        self.obs = None
+
+    def __enter__(self):
+        self.attr_ctx.__enter__()
+        self.obs = self.obs_ctx.__enter__()
+        self.obs.update(
+            input=self.input_payload,
+            metadata=self.metadata,
+        )
+        return self.obs
+
+    def __exit__(self, exc_type, exc, tb):
+        self.obs_ctx.__exit__(exc_type, exc, tb)
+        self.attr_ctx.__exit__(exc_type, exc, tb)
+
+
+class _ObservationContext:
+    def __init__(self, obs_ctx, input_payload=None, metadata=None):
+        self.obs_ctx = obs_ctx
+        self.input_payload = input_payload or {}
+        self.metadata = metadata or {}
+        self.obs = None
+
+    def __enter__(self):
+        self.obs = self.obs_ctx.__enter__()
+        self.obs.update(
+            input=self.input_payload,
+            metadata=self.metadata,
+        )
+        return self.obs
+
+    def __exit__(self, exc_type, exc, tb):
+        self.obs_ctx.__exit__(exc_type, exc, tb)
 
 
 def start_root_observation(
@@ -20,7 +55,7 @@ def start_root_observation(
     metadata: dict | None = None,
     tags: list[str] | None = None,
 ):
-    langfuse = get_langfuse()
+    langfuse = get_langfuse_client()
     if not langfuse:
         return nullcontext()
 
@@ -30,34 +65,47 @@ def start_root_observation(
         metadata=metadata or {},
         tags=tags or [],
     )
-
     obs_ctx = langfuse.start_as_current_observation(
-        name=name,
         as_type="span",
-        input=input_payload,
+        name=name,
     )
-
-    class CombinedContext:
-        def __enter__(self):
-            self._attr = attr_ctx.__enter__()
-            self._obs = obs_ctx.__enter__()
-            return self._obs
-
-        def __exit__(self, exc_type, exc, tb):
-            obs_ctx.__exit__(exc_type, exc, tb)
-            attr_ctx.__exit__(exc_type, exc, tb)
-
-    return CombinedContext()
+    return _CombinedContext(attr_ctx, obs_ctx, input_payload, metadata)
 
 
-def start_child_span(name: str, input_payload: dict | None = None, metadata: dict | None = None):
-    langfuse = get_langfuse()
+def start_child_span(
+    name: str,
+    input_payload: dict | None = None,
+    metadata: dict | None = None,
+):
+    langfuse = get_langfuse_client()
     if not langfuse:
         return nullcontext()
 
-    return langfuse.start_as_current_observation(
-        name=name,
+    obs_ctx = langfuse.start_as_current_observation(
         as_type="span",
-        input=input_payload or {},
-        metadata=metadata or {},
+        name=name,
     )
+    return _ObservationContext(obs_ctx, input_payload, metadata)
+
+
+def start_generation(
+    name: str,
+    model: str,
+    input_payload: dict | None = None,
+    metadata: dict | None = None,
+    prompt=None,
+):
+    langfuse = get_langfuse_client()
+    if not langfuse:
+        return nullcontext()
+
+    kwargs = {
+        "as_type": "generation",
+        "name": name,
+        "model": model,
+    }
+    if prompt is not None:
+        kwargs["prompt"] = prompt
+
+    obs_ctx = langfuse.start_as_current_observation(**kwargs)
+    return _ObservationContext(obs_ctx, input_payload, metadata)
