@@ -5,12 +5,30 @@ from app.chat.model_factory import get_chat_model
 from app.chat.prompt_loader import get_system_prompt
 from app.chat.session_state import TravelSessionState
 from app.chat.state_manager import update_state_from_user_query
-from app.chat.tool_router import maybe_convert_currency, maybe_get_weather
+from app.chat.tool_router import (
+    get_budget_from_travel_mcp,
+    get_trip_readiness_from_mcp,
+    get_trip_summary_from_mcp,
+    maybe_convert_currency,
+    maybe_get_weather,
+)
 from app.observability.tracing import (
     start_child_span,
     start_generation,
     start_root_observation,
 )
+
+
+def _extract_data(payload):
+    if payload is None:
+        return None
+    return payload.get("data")
+
+
+def _extract_decision(payload):
+    if payload is None:
+        return None
+    return payload.get("_decision")
 
 
 async def answer_user(
@@ -34,6 +52,11 @@ async def answer_user(
         },
         tags=["travel-copilot", provider],
     ) as root_obs:
+        decision_trace = {
+            "flow_stage_before": state.flow_stage,
+            "steps": [],
+        }
+
         with start_child_span(
             "parse_and_update_state",
             input_payload={"user_query": user_query},
@@ -45,10 +68,95 @@ async def answer_user(
                 metadata={"flow_stage_after_parse": state.flow_stage},
             )
 
-        weather_context = None
-        currency_context = None
+        decision_trace["steps"].append(
+            {
+                "step": "state_update",
+                "reason": "State manager parsed the user query and updated session state.",
+                "flow_stage_after_parse": state.flow_stage,
+                "state_snapshot": state.to_dict(),
+            }
+        )
+
+        readiness_payload = None
+        trip_summary_payload = None
+        travel_budget_payload = None
+        weather_payload = None
+        currency_payload = None
 
         if state.flow_stage == "show_itinerary":
+            decision_trace["steps"].append(
+                {
+                    "step": "flow_gate",
+                    "reason": "flow_stage == show_itinerary, so MCP/tool lookups are allowed.",
+                    "flow_stage": state.flow_stage,
+                }
+            )
+
+            with start_child_span(
+                "trip_readiness_lookup",
+                input_payload={
+                    "city": state.city,
+                    "trip_days": state.trip_days,
+                    "date_text": state.date_text,
+                    "budget_amount": state.budget_amount,
+                },
+                metadata={"tool": "travel_planning_mcp.trip_readiness_check_tool"},
+            ) as readiness_obs:
+                readiness_payload = await get_trip_readiness_from_mcp(state)
+                readiness_obs.update(output=readiness_payload)
+
+            decision_trace["steps"].append(
+                {
+                    "step": "trip_readiness_lookup",
+                    "decision": _extract_decision(readiness_payload),
+                    "result_preview": _extract_data(readiness_payload),
+                }
+            )
+
+            with start_child_span(
+                "trip_summary_lookup",
+                input_payload={
+                    "city": state.city,
+                    "trip_days": state.trip_days,
+                    "date_text": state.date_text,
+                    "budget_amount": state.budget_amount,
+                    "budget_currency": state.budget_currency,
+                    "target_currency": state.target_currency,
+                },
+                metadata={"tool": "travel_planning_mcp.build_trip_summary_tool"},
+            ) as summary_obs:
+                trip_summary_payload = await get_trip_summary_from_mcp(state)
+                summary_obs.update(output=trip_summary_payload)
+
+            decision_trace["steps"].append(
+                {
+                    "step": "trip_summary_lookup",
+                    "decision": _extract_decision(trip_summary_payload),
+                    "result_preview": _extract_data(trip_summary_payload),
+                }
+            )
+
+            with start_child_span(
+                "travel_budget_lookup",
+                input_payload={
+                    "city": state.city,
+                    "trip_days": state.trip_days,
+                    "budget_currency": state.budget_currency,
+                    "target_currency": state.target_currency,
+                },
+                metadata={"tool": "travel_planning_mcp.estimate_daily_budget_tool"},
+            ) as budget_obs:
+                travel_budget_payload = await get_budget_from_travel_mcp(state)
+                budget_obs.update(output=travel_budget_payload)
+
+            decision_trace["steps"].append(
+                {
+                    "step": "travel_budget_lookup",
+                    "decision": _extract_decision(travel_budget_payload),
+                    "result_preview": _extract_data(travel_budget_payload),
+                }
+            )
+
             with start_child_span(
                 "weather_lookup",
                 input_payload={
@@ -59,8 +167,17 @@ async def answer_user(
                 metadata={"tool": "weather_mcp"},
             ) as weather_obs:
                 synthetic_query = f"{state.city} {state.date_text or ''} {state.trip_days or ''} day weather"
-                weather_context = await maybe_get_weather(synthetic_query)
-                weather_obs.update(output=weather_context)
+                weather_payload = await maybe_get_weather(synthetic_query)
+                weather_obs.update(output=weather_payload)
+
+            decision_trace["steps"].append(
+                {
+                    "step": "weather_lookup",
+                    "synthetic_query": synthetic_query,
+                    "decision": _extract_decision(weather_payload),
+                    "result_preview": _extract_data(weather_payload),
+                }
+            )
 
             with start_child_span(
                 "currency_lookup",
@@ -75,8 +192,38 @@ async def answer_user(
                     synthetic_query = f"{state.budget_amount} {state.budget_currency}"
                     if state.target_currency:
                         synthetic_query += f" to {state.target_currency}"
-                    currency_context = await maybe_convert_currency(synthetic_query)
-                currency_obs.update(output=currency_context)
+                    currency_payload = await maybe_convert_currency(synthetic_query)
+                else:
+                    synthetic_query = None
+                    currency_payload = {
+                        "_decision": {
+                            "mcp_family": "currency_mcp",
+                            "tool_name": None,
+                            "reason": "Currency lookup skipped because budget_amount or budget_currency is missing.",
+                            "arguments": None,
+                            "skipped": True,
+                        },
+                        "data": None,
+                    }
+
+                currency_obs.update(output=currency_payload)
+
+            decision_trace["steps"].append(
+                {
+                    "step": "currency_lookup",
+                    "synthetic_query": synthetic_query,
+                    "decision": _extract_decision(currency_payload),
+                    "result_preview": _extract_data(currency_payload),
+                }
+            )
+        else:
+            decision_trace["steps"].append(
+                {
+                    "step": "flow_gate",
+                    "reason": "flow_stage is not show_itinerary, so MCP/tool lookups were skipped.",
+                    "flow_stage": state.flow_stage,
+                }
+            )
 
         with start_child_span(
             "fetch_prompt",
@@ -87,20 +234,40 @@ async def answer_user(
             prompt_obs.update(output=prompt_meta)
 
         tool_context = {
-            "weather": weather_context,
-            "currency": currency_context,
+            "trip_readiness": _extract_data(readiness_payload),
+            "trip_summary": _extract_data(trip_summary_payload),
+            "travel_budget": _extract_data(travel_budget_payload),
+            "weather": _extract_data(weather_payload),
+            "currency": _extract_data(currency_payload),
         }
 
         guardrails = []
+
+        if tool_context["trip_readiness"] and tool_context["trip_readiness"].get("error"):
+            guardrails.append(
+                "Trip readiness lookup failed. Do not invent readiness details."
+            )
+
+        if tool_context["trip_summary"] and tool_context["trip_summary"].get("error"):
+            guardrails.append(
+                "Trip summary lookup failed. Do not invent trip summary details."
+            )
+
+        if tool_context["travel_budget"] and tool_context["travel_budget"].get("error"):
+            guardrails.append(
+                "Travel budget lookup failed. Do not invent budget estimates."
+            )
+
         if (
-            currency_context
-            and currency_context.get("converted_amount") is None
-            and currency_context.get("to_currency")
+            tool_context["currency"]
+            and tool_context["currency"].get("converted_amount") is None
+            and tool_context["currency"].get("to_currency")
         ):
             guardrails.append(
                 "Currency conversion was unavailable. Do not estimate exchange rates."
             )
-        if weather_context and weather_context.get("error"):
+
+        if tool_context["weather"] and tool_context["weather"].get("error"):
             guardrails.append(
                 "Weather lookup failed. Do not invent weather conditions."
             )
@@ -156,11 +323,16 @@ async def answer_user(
             update_payload = {
                 "output": {"answer": answer},
             }
-
             if usage:
                 update_payload["usage_details"] = usage
 
             gen_obs.update(**update_payload)
+
+        decision_trace["flow_stage_after"] = state.flow_stage
+        decision_trace["llm_input_summary"] = {
+            "tool_context_keys": list(tool_context.keys()),
+            "guardrails": guardrails,
+        }
 
         if root_obs:
             root_obs.update(
@@ -168,6 +340,7 @@ async def answer_user(
                     "answer": answer,
                     "state_after": state.to_dict(),
                     "tool_context": tool_context,
+                    "decision_trace": decision_trace,
                     "prompt_meta": prompt_meta,
                 },
                 metadata={
@@ -182,6 +355,7 @@ async def answer_user(
         return {
             "answer": answer,
             "tool_context": tool_context,
+            "decision_trace": decision_trace,
             "state": state.to_dict(),
             "flow_stage": state.flow_stage,
             "prompt_meta": prompt_meta,
