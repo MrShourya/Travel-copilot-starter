@@ -46,15 +46,22 @@ class TravelPlanningMCPClient(MCPClientBase):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     tools_result = await session.list_tools()
-                    print("[Travel Planning MCP Tools]", tools_result)
+                    available_tools = [tool.name for tool in tools_result.tools]
 
                     result = await session.call_tool(tool_name, arguments)
                     parsed = _normalize_mcp_result(result)
-                    print("[Travel Planning MCP Parsed Result]", parsed)
 
                     return ToolResult(
                         tool_name=tool_name,
-                        content=parsed,
+                        content={
+                            "result": parsed,
+                            "_meta": {
+                                "server_url": TRAVEL_PLANNING_MCP_URL,
+                                "available_tools": available_tools,
+                                "called_tool": tool_name,
+                                "arguments": arguments,
+                            },
+                        },
                     )
         except Exception as exc:
             return ToolResult(
@@ -62,5 +69,10 @@ class TravelPlanningMCPClient(MCPClientBase):
                 content={
                     "error": str(exc),
                     "note": "Local travel planning MCP failed.",
+                    "_meta": {
+                        "server_url": TRAVEL_PLANNING_MCP_URL,
+                        "called_tool": tool_name,
+                        "arguments": arguments,
+                    },
                 },
             )
