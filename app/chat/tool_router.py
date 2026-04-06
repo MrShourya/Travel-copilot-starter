@@ -1,12 +1,13 @@
 import re
+from datetime import date, timedelta
 
 from app.mcp.currency_client import CurrencyMCPClient
+from app.mcp.travel_planning_client import TravelPlanningMCPClient
 from app.mcp.weather_client import WeatherMCPClient
 
 weather_client = WeatherMCPClient()
 currency_client = CurrencyMCPClient()
-
-from datetime import date, timedelta
+travel_planning_client = TravelPlanningMCPClient()
 
 
 async def maybe_get_weather(user_query: str) -> dict | None:
@@ -49,6 +50,7 @@ async def maybe_get_weather(user_query: str) -> dict | None:
     )
     return result.content
 
+
 async def maybe_convert_currency(user_query: str) -> dict | None:
     keywords = ["aed", "usd", "eur", "inr", "convert", "budget", "currency", "under"]
     if not any(word in user_query.lower() for word in keywords):
@@ -57,7 +59,6 @@ async def maybe_convert_currency(user_query: str) -> dict | None:
     amount, detected_currency = extract_amount_and_currency(user_query)
     target_currency = extract_target_currency(user_query)
 
-    # No explicit target currency -> do not convert
     if not target_currency:
         return {
             "amount": amount,
@@ -77,7 +78,6 @@ async def maybe_convert_currency(user_query: str) -> dict | None:
             "note": "No conversion needed because source and target currencies are the same.",
         }
 
-    # Direct lookup
     result = await currency_client.call_tool(
         tool_name="get_latest_rates",
         arguments={
@@ -99,7 +99,6 @@ async def maybe_convert_currency(user_query: str) -> dict | None:
             "source": "Remote Currency MCP (direct latest rates)",
         }
 
-    # USD bridge fallback
     bridge_result = await currency_client.call_tool(
         tool_name="get_latest_rates",
         arguments={
@@ -142,6 +141,54 @@ async def maybe_convert_currency(user_query: str) -> dict | None:
         },
     }
 
+
+async def get_trip_readiness_from_mcp(state) -> dict | None:
+    result = await travel_planning_client.call_tool(
+        tool_name="trip_readiness_check_tool",
+        arguments={
+            "city": state.city,
+            "trip_days": state.trip_days,
+            "date_text": state.date_text,
+            "budget_amount": state.budget_amount,
+        },
+    )
+    return result.content
+
+
+async def get_trip_summary_from_mcp(state) -> dict | None:
+    result = await travel_planning_client.call_tool(
+        tool_name="build_trip_summary_tool",
+        arguments={
+            "city": state.city,
+            "trip_days": state.trip_days,
+            "date_text": state.date_text,
+            "budget_amount": state.budget_amount,
+            "budget_currency": state.budget_currency,
+            "target_currency": state.target_currency,
+            "travel_style": "midrange",
+        },
+    )
+    return result.content
+
+
+async def get_budget_from_travel_mcp(state) -> dict | None:
+    if not state.city or not state.trip_days:
+        return None
+
+    currency = state.target_currency or state.budget_currency or "USD"
+
+    result = await travel_planning_client.call_tool(
+        tool_name="estimate_daily_budget_tool",
+        arguments={
+            "city": state.city,
+            "trip_days": state.trip_days,
+            "travel_style": "midrange",
+            "currency": currency,
+        },
+    )
+    return result.content
+
+
 def extract_target_currency(user_query: str) -> str | None:
     query_lower = user_query.lower()
 
@@ -158,6 +205,7 @@ def extract_target_currency(user_query: str) -> str | None:
             return match.group(1).upper()
 
     return None
+
 
 def extract_city(user_query: str) -> str:
     known_cities = [

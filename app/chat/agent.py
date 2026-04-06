@@ -5,7 +5,13 @@ from app.chat.model_factory import get_chat_model
 from app.chat.prompt_loader import get_system_prompt
 from app.chat.session_state import TravelSessionState
 from app.chat.state_manager import update_state_from_user_query
-from app.chat.tool_router import maybe_convert_currency, maybe_get_weather
+from app.chat.tool_router import (
+    get_budget_from_travel_mcp,
+    get_trip_readiness_from_mcp,
+    get_trip_summary_from_mcp,
+    maybe_convert_currency,
+    maybe_get_weather,
+)
 from app.observability.tracing import (
     start_child_span,
     start_generation,
@@ -45,10 +51,54 @@ async def answer_user(
                 metadata={"flow_stage_after_parse": state.flow_stage},
             )
 
+        readiness_context = None
+        trip_summary_context = None
+        travel_budget_context = None
         weather_context = None
         currency_context = None
 
         if state.flow_stage == "show_itinerary":
+            with start_child_span(
+                "trip_readiness_lookup",
+                input_payload={
+                    "city": state.city,
+                    "trip_days": state.trip_days,
+                    "date_text": state.date_text,
+                    "budget_amount": state.budget_amount,
+                },
+                metadata={"tool": "travel_planning_mcp.trip_readiness_check_tool"},
+            ) as readiness_obs:
+                readiness_context = await get_trip_readiness_from_mcp(state)
+                readiness_obs.update(output=readiness_context)
+
+            with start_child_span(
+                "trip_summary_lookup",
+                input_payload={
+                    "city": state.city,
+                    "trip_days": state.trip_days,
+                    "date_text": state.date_text,
+                    "budget_amount": state.budget_amount,
+                    "budget_currency": state.budget_currency,
+                    "target_currency": state.target_currency,
+                },
+                metadata={"tool": "travel_planning_mcp.build_trip_summary_tool"},
+            ) as summary_obs:
+                trip_summary_context = await get_trip_summary_from_mcp(state)
+                summary_obs.update(output=trip_summary_context)
+
+            with start_child_span(
+                "travel_budget_lookup",
+                input_payload={
+                    "city": state.city,
+                    "trip_days": state.trip_days,
+                    "budget_currency": state.budget_currency,
+                    "target_currency": state.target_currency,
+                },
+                metadata={"tool": "travel_planning_mcp.estimate_daily_budget_tool"},
+            ) as budget_obs:
+                travel_budget_context = await get_budget_from_travel_mcp(state)
+                budget_obs.update(output=travel_budget_context)
+
             with start_child_span(
                 "weather_lookup",
                 input_payload={
@@ -76,6 +126,7 @@ async def answer_user(
                     if state.target_currency:
                         synthetic_query += f" to {state.target_currency}"
                     currency_context = await maybe_convert_currency(synthetic_query)
+
                 currency_obs.update(output=currency_context)
 
         with start_child_span(
@@ -87,11 +138,30 @@ async def answer_user(
             prompt_obs.update(output=prompt_meta)
 
         tool_context = {
+            "trip_readiness": readiness_context,
+            "trip_summary": trip_summary_context,
+            "travel_budget": travel_budget_context,
             "weather": weather_context,
             "currency": currency_context,
         }
 
         guardrails = []
+
+        if readiness_context and readiness_context.get("error"):
+            guardrails.append(
+                "Trip readiness lookup failed. Do not invent readiness details."
+            )
+
+        if trip_summary_context and trip_summary_context.get("error"):
+            guardrails.append(
+                "Trip summary lookup failed. Do not invent trip summary details."
+            )
+
+        if travel_budget_context and travel_budget_context.get("error"):
+            guardrails.append(
+                "Travel budget lookup failed. Do not invent budget estimates."
+            )
+
         if (
             currency_context
             and currency_context.get("converted_amount") is None
@@ -100,6 +170,7 @@ async def answer_user(
             guardrails.append(
                 "Currency conversion was unavailable. Do not estimate exchange rates."
             )
+
         if weather_context and weather_context.get("error"):
             guardrails.append(
                 "Weather lookup failed. Do not invent weather conditions."
@@ -156,7 +227,6 @@ async def answer_user(
             update_payload = {
                 "output": {"answer": answer},
             }
-
             if usage:
                 update_payload["usage_details"] = usage
 
