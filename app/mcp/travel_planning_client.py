@@ -35,8 +35,23 @@ def _normalize_mcp_result(result: Any) -> dict[str, Any]:
     return {"raw": str(result)}
 
 
+def _normalize_tool(tool: Any) -> dict[str, Any]:
+    input_schema = getattr(tool, "inputSchema", None) or {}
+    properties = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+    required = input_schema.get("required", []) if isinstance(input_schema, dict) else []
+
+    return {
+        "tool_name": getattr(tool, "name", ""),
+        "mcp_family": "travel_planning_mcp",
+        "description": getattr(tool, "description", "") or "",
+        "required_args": list(required),
+        "optional_args": [k for k in properties.keys() if k not in required],
+        "input_schema": input_schema,
+    }
+
+
 class TravelPlanningMCPClient(MCPClientBase):
-    async def call_tool(self, tool_name: str, arguments: dict) -> ToolResult:
+    async def list_tools(self) -> list[dict[str, Any]]:
         try:
             async with streamable_http_client(TRAVEL_PLANNING_MCP_URL) as (
                 read_stream,
@@ -46,22 +61,25 @@ class TravelPlanningMCPClient(MCPClientBase):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     tools_result = await session.list_tools()
-                    available_tools = [tool.name for tool in tools_result.tools]
+                    return [_normalize_tool(tool) for tool in tools_result.tools]
+        except Exception:
+            return []
 
+    async def call_tool(self, tool_name: str, arguments: dict) -> ToolResult:
+        try:
+            async with streamable_http_client(TRAVEL_PLANNING_MCP_URL) as (
+                read_stream,
+                write_stream,
+                _,
+            ):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
                     result = await session.call_tool(tool_name, arguments)
                     parsed = _normalize_mcp_result(result)
 
                     return ToolResult(
                         tool_name=tool_name,
-                        content={
-                            "result": parsed,
-                            "_meta": {
-                                "server_url": TRAVEL_PLANNING_MCP_URL,
-                                "available_tools": available_tools,
-                                "called_tool": tool_name,
-                                "arguments": arguments,
-                            },
-                        },
+                        content=parsed,
                     )
         except Exception as exc:
             return ToolResult(
@@ -69,10 +87,5 @@ class TravelPlanningMCPClient(MCPClientBase):
                 content={
                     "error": str(exc),
                     "note": "Local travel planning MCP failed.",
-                    "_meta": {
-                        "server_url": TRAVEL_PLANNING_MCP_URL,
-                        "called_tool": tool_name,
-                        "arguments": arguments,
-                    },
                 },
             )

@@ -4,7 +4,6 @@ from langchain_core.prompts import PromptTemplate
 from pydantic import ValidationError
 
 from app.chat.dynamic_mcp.models import PlannerDecision
-from app.chat.dynamic_mcp.registry import list_tools_for_prompt
 from app.chat.model_factory import get_chat_model
 
 
@@ -28,10 +27,8 @@ You are a controller that decides what happens next.
 - Ask only for the missing fields needed for the next useful step.
 - If enough information exists, call exactly one tool.
 - Do not call multiple tools in one decision.
-- Prefer checking readiness before summary if the trip request is still incomplete.
-- If the user explicitly asks for weather but date/range is missing, ask when.
-- If the user asks for itinerary creation but city or days are missing, ask for them.
-- If you already have enough information and tool calls are not needed, answer directly.
+- Prefer calling the most useful next tool, not every possible tool.
+- If you already have enough information and tools are not needed, choose action="answer".
 - Return valid JSON only.
 - Do not include markdown fences.
 
@@ -41,7 +38,7 @@ You are a controller that decides what happens next.
 ## Current session state
 {session_state}
 
-## Available tools
+## Available tools discovered live from MCP servers
 {available_tools}
 
 ## Previous steps in this turn
@@ -66,6 +63,63 @@ Return JSON with this structure:
 """.strip()
 
 
+_FOLLOWUP_QUESTION_PROMPT = """
+You are helping a travel assistant ask the user for missing information.
+
+Generate one short, natural, focused follow-up question.
+
+## Current user request
+{user_request}
+
+## Current session state
+{session_state}
+
+## Tool the planner wanted to call
+{tool_name}
+
+## Missing fields
+{missing_fields}
+
+## Tool information
+{tool_spec}
+
+Rules:
+- Ask only for the missing information.
+- Make the question natural and specific.
+- Do not mention JSON, validation, schemas, or internal system details.
+- Return plain text only.
+""".strip()
+
+
+_FINAL_ANSWER_PROMPT = """
+You are the final response generator for a travel assistant.
+
+Write the final user-facing answer using the collected tool results.
+
+## Current user request
+{user_request}
+
+## Current session state
+{session_state}
+
+## Tool results collected so far
+{tool_results}
+
+## Planner reason for answering now
+{planner_reason}
+
+## Planner draft answer
+{planner_draft_answer}
+
+Rules:
+- Use the tool results when available.
+- Be clear, concise, and directly helpful.
+- Do not mention internal planner loops, validation, or MCP internals.
+- If tool results are incomplete, answer honestly and avoid inventing facts.
+- Return plain text only.
+""".strip()
+
+
 def _extract_json(text: str) -> dict:
     text = text.strip()
 
@@ -82,6 +136,7 @@ async def plan_next_action(
     user_request: str,
     session_state: dict,
     prior_steps: list[dict],
+    available_tools: list[dict],
     provider: str,
     temperature: float = 0.0,
 ) -> dict:
@@ -92,9 +147,7 @@ async def plan_next_action(
     prompt_inputs = {
         "user_request": user_request,
         "session_state": json.dumps(session_state, ensure_ascii=False, indent=2),
-        "available_tools": json.dumps(
-            list_tools_for_prompt(), ensure_ascii=False, indent=2
-        ),
+        "available_tools": json.dumps(available_tools, ensure_ascii=False, indent=2),
         "prior_steps": json.dumps(prior_steps, ensure_ascii=False, indent=2),
     }
 
@@ -121,6 +174,72 @@ async def plan_next_action(
 
     return {
         "decision": decision,
+        "raw_response": raw_text,
+        "rendered_prompt": rendered_prompt,
+    }
+
+
+async def generate_followup_question(
+    *,
+    user_request: str,
+    session_state: dict,
+    tool_name: str | None,
+    missing_fields: list[str],
+    tool_spec: dict | None,
+    provider: str,
+) -> dict:
+    llm = get_chat_model(provider=provider, temperature=0.0)
+    prompt = PromptTemplate.from_template(_FOLLOWUP_QUESTION_PROMPT)
+    chain = prompt | llm
+
+    prompt_inputs = {
+        "user_request": user_request,
+        "session_state": json.dumps(session_state, ensure_ascii=False, indent=2),
+        "tool_name": tool_name or "",
+        "missing_fields": json.dumps(missing_fields, ensure_ascii=False),
+        "tool_spec": json.dumps(tool_spec or {}, ensure_ascii=False, indent=2),
+    }
+
+    rendered_prompt = prompt.format(**prompt_inputs)
+    response = await chain.ainvoke(prompt_inputs)
+
+    raw_text = response.content if hasattr(response, "content") else str(response)
+
+    return {
+        "question": raw_text.strip(),
+        "raw_response": raw_text,
+        "rendered_prompt": rendered_prompt,
+    }
+
+
+async def generate_final_answer(
+    *,
+    user_request: str,
+    session_state: dict,
+    tool_results: list[dict],
+    planner_reason: str,
+    planner_draft_answer: str | None,
+    provider: str,
+) -> dict:
+    llm = get_chat_model(provider=provider, temperature=0.2)
+    prompt = PromptTemplate.from_template(_FINAL_ANSWER_PROMPT)
+    chain = prompt | llm
+
+    prompt_inputs = {
+        "user_request": user_request,
+        "session_state": json.dumps(session_state, ensure_ascii=False, indent=2),
+        "tool_results": json.dumps(tool_results, ensure_ascii=False, indent=2),
+        "planner_reason": planner_reason,
+        "planner_draft_answer": planner_draft_answer or "",
+    }
+
+    rendered_prompt = prompt.format(**prompt_inputs)
+    response = await chain.ainvoke(prompt_inputs)
+
+    raw_text = response.content if hasattr(response, "content") else str(response)
+
+    return {
+        "final_answer": raw_text.strip(),
         "raw_response": raw_text,
         "rendered_prompt": rendered_prompt,
     }

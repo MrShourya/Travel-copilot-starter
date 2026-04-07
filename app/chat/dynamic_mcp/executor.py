@@ -1,7 +1,7 @@
 from typing import Any
 
 from app.chat.dynamic_mcp.models import ExecutionResult, PlannerDecision
-from app.chat.dynamic_mcp.registry import get_required_args, get_tool_spec
+from app.chat.dynamic_mcp.tool_catalog import get_required_args, get_tool_spec
 from app.mcp.currency_client import CurrencyMCPClient
 from app.mcp.travel_planning_client import TravelPlanningMCPClient
 from app.mcp.weather_client import WeatherMCPClient
@@ -15,8 +15,12 @@ def _normalize_args(arguments: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in arguments.items() if v is not None}
 
 
-def _missing_required_fields(tool_name: str, arguments: dict[str, Any]) -> list[str]:
-    required = get_required_args(tool_name)
+def _missing_required_fields(
+    available_tools: list[dict[str, Any]],
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> list[str]:
+    required = get_required_args(available_tools, tool_name)
     missing = []
 
     for field in required:
@@ -55,7 +59,10 @@ def _build_followup_question(missing_fields: list[str], tool_name: str | None) -
     return " ".join(questions)
 
 
-def explain_validation(decision: PlannerDecision) -> dict[str, Any]:
+def explain_validation(
+    decision: PlannerDecision,
+    available_tools: list[dict[str, Any]],
+) -> dict[str, Any]:
     if decision.action != "call_tool":
         return {
             "selected_action": decision.action,
@@ -65,9 +72,9 @@ def explain_validation(decision: PlannerDecision) -> dict[str, Any]:
             "missing_args": [],
         }
 
-    required_args = get_required_args(decision.tool_name)
+    required_args = get_required_args(available_tools, decision.tool_name)
     provided_args = decision.arguments or {}
-    missing_args = _missing_required_fields(decision.tool_name, provided_args)
+    missing_args = _missing_required_fields(available_tools, decision.tool_name, provided_args)
 
     return {
         "selected_action": decision.action,
@@ -78,7 +85,10 @@ def explain_validation(decision: PlannerDecision) -> dict[str, Any]:
     }
 
 
-def validate_planner_decision(decision: PlannerDecision) -> dict[str, Any]:
+def validate_planner_decision(
+    decision: PlannerDecision,
+    available_tools: list[dict[str, Any]],
+) -> dict[str, Any]:
     if decision.action == "ask_user":
         if not decision.question:
             return {
@@ -105,7 +115,7 @@ def validate_planner_decision(decision: PlannerDecision) -> dict[str, Any]:
                 "missing_fields": [],
             }
 
-        spec = get_tool_spec(decision.tool_name)
+        spec = get_tool_spec(available_tools, decision.tool_name)
         if spec is None:
             return {
                 "ok": False,
@@ -113,13 +123,16 @@ def validate_planner_decision(decision: PlannerDecision) -> dict[str, Any]:
                 "missing_fields": [],
             }
 
-        missing = _missing_required_fields(decision.tool_name, decision.arguments)
+        missing = _missing_required_fields(
+            available_tools,
+            decision.tool_name,
+            decision.arguments,
+        )
         if missing:
             return {
                 "ok": False,
                 "error": f"Missing required arguments for {decision.tool_name}",
                 "missing_fields": missing,
-                "question": _build_followup_question(missing, decision.tool_name),
             }
 
         return {"ok": True, "missing_fields": []}
@@ -139,38 +152,34 @@ async def execute_planner_tool(decision: PlannerDecision) -> ExecutionResult:
 
     tool_name = decision.tool_name
     arguments = _normalize_args(decision.arguments)
+    mcp_family = decision.mcp_family
 
-    if tool_name in {
-        "trip_readiness_check_tool",
-        "build_trip_summary_tool",
-        "estimate_daily_budget_tool",
-        "suggest_packing_list_tool",
-    }:
+    if mcp_family == "travel_planning_mcp":
         result = await travel_planning_client.call_tool(tool_name=tool_name, arguments=arguments)
         return ExecutionResult(
             ok=True,
             tool_name=tool_name,
-            mcp_family="travel_planning_mcp",
+            mcp_family=mcp_family,
             arguments=arguments,
             result=result.content,
         )
 
-    if tool_name in {"get_current_weather", "get_weather_byDateTimeRange"}:
+    if mcp_family == "weather_mcp":
         result = await weather_client.call_tool(tool_name=tool_name, arguments=arguments)
         return ExecutionResult(
             ok=True,
             tool_name=tool_name,
-            mcp_family="weather_mcp",
+            mcp_family=mcp_family,
             arguments=arguments,
             result=result.content,
         )
 
-    if tool_name == "get_latest_rates":
+    if mcp_family == "currency_mcp":
         result = await currency_client.call_tool(tool_name=tool_name, arguments=arguments)
         return ExecutionResult(
             ok=True,
             tool_name=tool_name,
-            mcp_family="currency_mcp",
+            mcp_family=mcp_family,
             arguments=arguments,
             result=result.content,
         )
@@ -178,7 +187,7 @@ async def execute_planner_tool(decision: PlannerDecision) -> ExecutionResult:
     return ExecutionResult(
         ok=False,
         tool_name=tool_name,
-        mcp_family=decision.mcp_family,
+        mcp_family=mcp_family,
         arguments=arguments,
-        error=f"Executor does not support tool: {tool_name}",
+        error=f"Executor does not support MCP family: {mcp_family}",
     )

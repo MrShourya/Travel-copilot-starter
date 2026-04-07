@@ -175,12 +175,13 @@ def render_page(*, provider: str, temperature: float, session_placeholder) -> No
             session_placeholder.json(st.session_state.travel_state.to_dict())
 
             assistant_message = {
+                "message_id": f"dynamic_{len(st.session_state.messages_dynamic)}",
                 "role": "assistant",
                 "content": result["answer"],
-                "tool_context": result.get("tool_context"),
+                "response_type": result.get("response_type"),
                 "decision_trace": result.get("decision_trace"),
+                "tool_results": result.get("tool_results"),
                 "state": result.get("state"),
-                "prompt_meta": result.get("prompt_meta"),
             }
 
             render_assistant_message(assistant_message)
