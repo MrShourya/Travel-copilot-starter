@@ -1,44 +1,43 @@
-from io import StringIO
 import re
 
 import pandas as pd
 
 
-def extract_first_markdown_table(markdown_text: str) -> pd.DataFrame | None:
-    """
-    Extract the first markdown table from text and return a DataFrame.
-    """
-    lines = markdown_text.splitlines()
+def extract_first_markdown_table(text: str):
+    if not text or "|" not in text:
+        return None
+
+    lines = text.splitlines()
+
+    table_start = None
+    for i in range(len(lines) - 1):
+        if "|" in lines[i] and "|" in lines[i + 1]:
+            separator = lines[i + 1].strip().replace(" ", "")
+            if re.fullmatch(r"\|?[:\-|]+\|?", separator):
+                table_start = i
+                break
+
+    if table_start is None:
+        return None
+
     table_lines = []
-
-    for i, line in enumerate(lines):
+    for line in lines[table_start:]:
         if "|" not in line:
-            if table_lines:
-                break
-            continue
+            break
+        table_lines.append(line.strip())
 
-        if i + 1 < len(lines):
-            next_line = lines[i + 1]
-            if re.match(r"^\s*\|?[\-\s\|:]+\|?\s*$", next_line):
-                table_lines = [line, next_line]
-                for extra in lines[i + 2:]:
-                    if "|" in extra:
-                        table_lines.append(extra)
-                    else:
-                        break
-                break
-
-    if len(table_lines) < 3:
+    if len(table_lines) < 2:
         return None
 
-    cleaned = []
-    for row in table_lines:
-        row = row.strip().strip("|")
-        cleaned.append(",".join([cell.strip() for cell in row.split("|")]))
+    header = [cell.strip() for cell in table_lines[0].strip("|").split("|")]
+    data_rows = []
 
-    csv_like = "\n".join([cleaned[0]] + cleaned[2:])
+    for row in table_lines[2:]:
+        cells = [cell.strip() for cell in row.strip("|").split("|")]
+        if len(cells) == len(header):
+            data_rows.append(cells)
 
-    try:
-        return pd.read_csv(StringIO(csv_like))
-    except Exception:
+    if not data_rows:
         return None
+
+    return pd.DataFrame(data_rows, columns=header)

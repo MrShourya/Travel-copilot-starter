@@ -19,6 +19,37 @@ from app.observability.tracing import (
 )
 
 
+def _summarize_user_input(user_query: str) -> dict:
+    lowered = user_query.lower()
+
+    keywords = {
+        "itinerary": "itinerary" in lowered,
+        "weather": "weather" in lowered or "forecast" in lowered,
+        "budget": "budget" in lowered,
+        "currency": "convert" in lowered or "currency" in lowered,
+        "packing": "packing" in lowered,
+    }
+
+    return {
+        "raw_text": user_query,
+        "normalized_text": lowered.strip(),
+        "keyword_hints": keywords,
+    }
+
+
+def _extract_state_slots(state: TravelSessionState) -> dict:
+    state_dict = state.to_dict()
+    tracked_keys = [
+        "city",
+        "trip_days",
+        "date_text",
+        "budget_amount",
+        "budget_currency",
+        "target_currency",
+        "flow_stage",
+    ]
+    return {key: state_dict.get(key) for key in tracked_keys}
+
 def _extract_data(payload):
     if payload is None:
         return None
