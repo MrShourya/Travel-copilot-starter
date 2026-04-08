@@ -88,6 +88,7 @@ def explain_validation(
 def validate_planner_decision(
     decision: PlannerDecision,
     available_tools: list[dict[str, Any]],
+    state_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if decision.action == "ask_user":
         if not decision.question:
@@ -123,11 +124,28 @@ def validate_planner_decision(
                 "missing_fields": [],
             }
 
-        missing = _missing_required_fields(
-            available_tools,
-            decision.tool_name,
-            decision.arguments,
-        )
+        required_args = get_required_args(available_tools, decision.tool_name)
+
+        provided_args = dict(decision.arguments or {})
+
+        # Merge state into provided args before validation
+        if state_context:
+            for key, value in state_context.items():
+                if key not in provided_args and value is not None:
+                    provided_args[key] = value
+
+        missing = []
+        for field in required_args:
+            value = provided_args.get(field)
+            if value is None:
+                missing.append(field)
+                continue
+            if isinstance(value, str) and not value.strip():
+                missing.append(field)
+
+        # Write enriched args back so downstream execution uses them
+        decision.arguments = provided_args
+
         if missing:
             return {
                 "ok": False,
@@ -138,7 +156,6 @@ def validate_planner_decision(
         return {"ok": True, "missing_fields": []}
 
     return {"ok": False, "error": f"Unknown action: {decision.action}", "missing_fields": []}
-
 
 async def execute_planner_tool(decision: PlannerDecision) -> ExecutionResult:
     if decision.action != "call_tool":

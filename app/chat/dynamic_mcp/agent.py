@@ -30,26 +30,22 @@ def _trace_step(
         "loop_index": loop_index,
         "payload": payload,
     }
+
 from datetime import datetime, timedelta
 
 
 def _derive_date_slots(state_dict: dict) -> dict:
-    """
-    Derive normalized start_date/end_date from existing state fields
-    when possible.
-    """
     date_text = state_dict.get("date_text")
     trip_days = state_dict.get("trip_days")
 
     derived = {
-        "start_date": None,
-        "end_date": None,
+        "start_date": state_dict.get("start_date"),
+        "end_date": state_dict.get("end_date"),
     }
 
     if not date_text:
         return derived
 
-    # Only handle explicit YYYY-MM-DD for now
     try:
         start_dt = datetime.strptime(date_text.strip(), "%Y-%m-%d").date()
         derived["start_date"] = start_dt.isoformat()
@@ -118,6 +114,8 @@ def _extract_state_slots(state: TravelSessionState) -> dict:
         "city",
         "trip_days",
         "date_text",
+        "start_date",
+        "end_date",
         "budget_amount",
         "budget_currency",
         "target_currency",
@@ -125,6 +123,57 @@ def _extract_state_slots(state: TravelSessionState) -> dict:
     ]
     return {key: state_dict.get(key) for key in tracked_keys}
 
+def _compact_trace(decision_trace):
+    """
+    Keep only minimal reasoning context for LLM.
+    """
+    compact = []
+
+    for step in decision_trace:
+        step_type = step.get("step_type")
+
+        # only keep essential reasoning
+        if step_type in [
+            "planner_response",
+            "action_decision",
+            "tool_execution",
+        ]:
+            compact.append({
+                "step_type": step_type,
+                "summary": str(step.get("payload"))[:300]  # truncate
+            })
+
+    return compact[-5:]  # only last 5 steps
+
+def _compact_tool_results(results):
+    compact = []
+    for r in results:
+        compact.append({
+            "tool": r.get("tool_name"),
+            "summary": str(r.get("data"))[:300]
+        })
+    return compact[-3:]
+
+def _compact_tools(tools):
+    return [
+        {
+            "tool_name": t.get("tool_name"),
+            "description": t.get("description"),
+            "args": t.get("args", [])[:5],  # limit args
+        }
+        for t in tools
+    ]
+
+def _compact_state(state):
+    s = state.to_dict()
+    return {
+        "city": s.get("city"),
+        "trip_days": s.get("trip_days"),
+        "start_date": s.get("start_date"),
+        "end_date": s.get("end_date"),
+        "budget_amount": s.get("budget_amount"),
+        "budget_currency": s.get("budget_currency"),
+    }
 
 async def answer_user_dynamic(
     *,
@@ -155,12 +204,13 @@ async def answer_user_dynamic(
         )
     )
 
-    state_dict = state.to_dict()
-    derived_dates = _derive_date_slots(state_dict)
-
-    # attach derived values back into state dict for planner visibility
-    state_dict.update(derived_dates)
-
+    # IMPORTANT: update the live state first
+    state = update_state_from_user_query(state, user_query)
+    derived_dates = _derive_date_slots(state.to_dict())
+    if derived_dates.get("start_date"):
+        state.start_date = derived_dates["start_date"]
+    if derived_dates.get("end_date"):
+        state.end_date = derived_dates["end_date"]
     decision_trace.append(
         _trace_step(
             "state_extraction",
@@ -177,7 +227,7 @@ async def answer_user_dynamic(
         _trace_step(
             "live_tool_catalog",
             "Live tool catalog was discovered from MCP servers",
-            available_tools=available_tools,
+            available_tools=_compact_tools(available_tools)
         )
     )
 
@@ -202,8 +252,8 @@ async def answer_user_dynamic(
         try:
             planner_result = await plan_next_action(
                 user_request=user_query,
-                session_state=state.to_dict(),
-                prior_steps=decision_trace,
+                session_state=_compact_state(state),
+                prior_steps=_compact_trace(decision_trace),
                 available_tools=available_tools,
                 provider=provider,
                 temperature=temperature,
@@ -229,8 +279,8 @@ async def answer_user_dynamic(
                 _trace_step(
                     "final_output",
                     "Workflow ended with planner error",
-                    error=str(exc),
                     answer=fallback_answer,
+                    response_type="answer",
                 )
             )
 
@@ -263,6 +313,35 @@ async def answer_user_dynamic(
             )
         )
 
+        # IMPORTANT: enrich tool arguments from current state before validation
+        if decision.action == "call_tool":
+            enriched_args = dict(decision.arguments or {})
+            state_dict = state.to_dict()
+
+            for key in [
+                "city",
+                "trip_days",
+                "start_date",
+                "end_date",
+                "date_text",
+                "budget_amount",
+                "budget_currency",
+                "target_currency",
+            ]:
+                if key not in enriched_args and state_dict.get(key) is not None:
+                    enriched_args[key] = state_dict[key]
+
+            decision.arguments = enriched_args
+
+            decision_trace.append(
+                _trace_step(
+                    "argument_enrichment",
+                    f"Planner arguments were enriched from state at loop {loop_index}",
+                    loop_index=loop_index,
+                    enriched_arguments=enriched_args,
+                )
+            )
+
         validation_explanation = explain_validation(decision, available_tools)
 
         decision_trace.append(
@@ -274,7 +353,11 @@ async def answer_user_dynamic(
             )
         )
 
-        validation = validate_planner_decision(decision, available_tools)
+        validation = validate_planner_decision(
+                        decision,
+                        available_tools,
+                        state_context=state.to_dict()
+                    )
 
         decision_trace.append(
             _trace_step(
@@ -287,7 +370,10 @@ async def answer_user_dynamic(
 
         if not validation.get("ok"):
             missing_fields = validation.get("missing_fields", [])
-            tool_spec = get_tool_spec(available_tools, getattr(decision, "tool_name", "") or "")
+            tool_spec = get_tool_spec(
+                available_tools,
+                getattr(decision, "tool_name", "") or "",
+            )
 
             try:
                 followup_result = await generate_followup_question(
@@ -478,7 +564,7 @@ async def answer_user_dynamic(
                 final_answer_result = await generate_final_answer(
                     user_request=user_query,
                     session_state=state.to_dict(),
-                    tool_results=tool_results,
+                    tool_results=_compact_tool_results(tool_results),
                     planner_reason=decision.reason,
                     planner_draft_answer=decision.final_answer,
                     provider=provider,
@@ -504,7 +590,9 @@ async def answer_user_dynamic(
                 final_answer_text = final_answer_result["final_answer"]
 
             except Exception:
-                final_answer_text = decision.final_answer or "I have enough information to answer now."
+                final_answer_text = (
+                    decision.final_answer or "I have enough information to answer now."
+                )
 
             decision_trace.append(
                 _trace_step(
