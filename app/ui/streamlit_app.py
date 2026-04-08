@@ -4,6 +4,10 @@ import sys
 from dotenv import load_dotenv
 import streamlit as st
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from app.config.settings import settings
 from app.ui.deterministic_page import render_page as render_deterministic_page
 from app.ui.dynamic_mcp_page import render_page as render_dynamic_page
@@ -11,14 +15,11 @@ from app.ui.ui_state import ensure_ui_state
 
 load_dotenv()
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-
 st.set_page_config(page_title="Travel Copilot", page_icon="✈️", layout="wide")
 st.title("✈️ Multi-MCP Travel Copilot")
-
+st.caption(
+        "We connect tools using Stdio (currency tools), HTTP (weather tools), own custom MCP tools over HTTP (travel-planning-mcp)."
+    )
 st.markdown(
     """
     <style>
@@ -30,7 +31,6 @@ st.markdown(
         padding-bottom: 120px;
     }
 
-    /* Fixed bottom wrapper */
     div[data-testid="stChatInput"] {
         position: fixed !important;
         bottom: 0;
@@ -43,14 +43,12 @@ st.markdown(
         box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
     }
 
-    /* Only widen + center the inner area */
     div[data-testid="stChatInput"] > div {
         width: min(1100px, calc(100vw - 40px)) !important;
         max-width: 1100px !important;
         margin: 0 auto !important;
     }
 
-    /* Keep text readable */
     div[data-testid="stChatInput"] textarea,
     div[data-testid="stChatInput"] input {
         background-color: transparent !important;
@@ -58,14 +56,12 @@ st.markdown(
         caret-color: inherit !important;
     }
 
-    /* Placeholder */
     div[data-testid="stChatInput"] textarea::placeholder,
     div[data-testid="stChatInput"] input::placeholder {
         color: rgba(127, 127, 127, 0.9) !important;
         opacity: 1 !important;
     }
 
-    /* Keep Streamlit/BaseWeb internals readable without changing height */
     div[data-testid="stChatInput"] [data-baseweb="textarea"],
     div[data-testid="stChatInput"] [data-baseweb="input"] {
         background: transparent !important;
@@ -121,17 +117,18 @@ with st.sidebar:
     session_placeholder = st.empty()
     session_placeholder.json(st.session_state.travel_state.to_dict())
 
-tab_det, tab_dyn = st.tabs(["Deterministic MCP", "Dynamic MCP Lab"])
+# Dynamic first = default selected tab
+tab_dyn, tab_det = st.tabs(["Dynamic MCP Lab", "Deterministic MCP"])
 
-with tab_det:
-    render_deterministic_page(
+with tab_dyn:
+    render_dynamic_page(
         provider=provider,
         temperature=temperature,
         session_placeholder=session_placeholder,
     )
 
-with tab_dyn:
-    render_dynamic_page(
+with tab_det:
+    render_deterministic_page(
         provider=provider,
         temperature=temperature,
         session_placeholder=session_placeholder,

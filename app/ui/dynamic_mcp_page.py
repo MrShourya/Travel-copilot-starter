@@ -3,6 +3,7 @@ import asyncio
 import streamlit as st
 
 from app.chat.dynamic_mcp.agent import answer_user_dynamic
+from app.chat.dynamic_mcp.tool_catalog import discover_live_tool_catalog
 from app.chat.session_state import TravelSessionState
 from app.ui.rendering_common import render_json_expander, render_markdown_with_table
 
@@ -79,103 +80,136 @@ def _build_step_sequence(decision_trace: list[dict]) -> list[dict]:
         payload = step.get("payload", {})
 
         if step_type == "turn_start":
-            sequence.append({
-                "label": "User Input",
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["user_input"],
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "User Input",
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["user_input"],
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "input_understanding":
-            sequence.append({
-                "label": "Input Understanding",
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["input_understanding"],
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Input Understanding",
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["input_understanding"],
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "state_extraction":
-            sequence.append({
-                "label": "State Extraction",
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["state_extraction"],
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "State Extraction",
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["state_extraction"],
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "live_tool_catalog":
-            sequence.append({
-                "label": "Live Tool Catalog",
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["live_tool_catalog"],
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Live Tool Catalog",
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["live_tool_catalog"],
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "planner_prompt":
-            sequence.append({
-                "label": "Planner Prompt",
-                "step_type": step_type,
-                "loop_index": loop_index,
-                "color": _loop_color(loop_index),
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Planner Prompt",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "planner_response":
-            sequence.append({
-                "label": "Planner Response",
-                "step_type": step_type,
-                "loop_index": loop_index,
-                "color": _loop_color(loop_index),
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Planner Response",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
+
+        elif step_type == "argument_enrichment":
+            sequence.append(
+                {
+                    "label": "Argument Enrichment",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "input_requirements_check":
-            sequence.append({
-                "label": "Input Requirements Check",
-                "step_type": step_type,
-                "loop_index": loop_index,
-                "color": _loop_color(loop_index),
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Input Requirements Check",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "validation_result":
-            sequence.append({
-                "label": "Validation Result",
-                "step_type": step_type,
-                "loop_index": loop_index,
-                "color": _loop_color(loop_index),
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Validation Result",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "missing_field_prompt":
-            sequence.append({
-                "label": "Missing-Field Prompt",
-                "step_type": step_type,
-                "loop_index": loop_index,
-                "color": _loop_color(loop_index),
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Missing-Field Prompt",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "missing_field_response":
-            sequence.append({
-                "label": "Missing-Field Response",
-                "step_type": step_type,
-                "loop_index": loop_index,
-                "color": _loop_color(loop_index),
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Missing-Field Response",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "action_decision":
-            sequence.append({
-                "label": "Action Decision",
-                "step_type": step_type,
-                "loop_index": loop_index,
-                "color": _loop_color(loop_index),
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Action Decision",
+                    "step_type": step_type,
+                    "loop_index": loop_index,
+                    "color": _loop_color(loop_index),
+                    "payload": payload,
+                }
+            )
 
         elif step_type in {"tool_execution", "tool_execution_failed"}:
             tool_name = (
@@ -183,32 +217,42 @@ def _build_step_sequence(decision_trace: list[dict]) -> list[dict]:
                 or payload.get("execution", {}).get("tool_name")
                 or "unknown_tool"
             )
-            label = f"Tool Execution: {tool_name}" if step_type == "tool_execution" else f"Tool Execution Failed: {tool_name}"
-            sequence.append({
-                "label": label,
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["tool_execution"],
-                "payload": payload,
-            })
+            label = (
+                f"Tool Execution: {tool_name}"
+                if step_type == "tool_execution"
+                else f"Tool Execution Failed: {tool_name}"
+            )
+            sequence.append(
+                {
+                    "label": label,
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["tool_execution"],
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "final_answer_prompt":
-            sequence.append({
-                "label": "Final Answer Prompt",
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["final_output"],
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Final Answer Prompt",
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["final_output"],
+                    "payload": payload,
+                }
+            )
 
         elif step_type == "final_answer_response":
-            sequence.append({
-                "label": "Final Answer Response",
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["final_output"],
-                "payload": payload,
-            })
+            sequence.append(
+                {
+                    "label": "Final Answer Response",
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["final_output"],
+                    "payload": payload,
+                }
+            )
 
         elif step_type in {"final_output", "planner_error", "loop_limit"}:
             label = "Final Output"
@@ -216,13 +260,16 @@ def _build_step_sequence(decision_trace: list[dict]) -> list[dict]:
                 label = "Final Output Error"
             elif step_type == "loop_limit":
                 label = "Final Output Loop Limit"
-            sequence.append({
-                "label": label,
-                "step_type": step_type,
-                "loop_index": None,
-                "color": STATIC_STAGE_COLORS["final_output"],
-                "payload": payload,
-            })
+
+            sequence.append(
+                {
+                    "label": label,
+                    "step_type": step_type,
+                    "loop_index": None,
+                    "color": STATIC_STAGE_COLORS["final_output"],
+                    "payload": payload,
+                }
+            )
 
     return sequence
 
@@ -252,14 +299,62 @@ def _render_step_header(step: dict, idx: int) -> None:
     )
 
 
-def render_dynamic_trace(decision_trace: list[dict] | None, trace_key_prefix: str = "") -> None:
+def _render_available_tools() -> None:
+    st.subheader("🧰 Available MCP Tools")
+
+    try:
+        tools = asyncio.run(discover_live_tool_catalog())
+    except Exception:
+        st.warning("Could not load MCP tool catalog.")
+        return
+
+    if not tools:
+        st.info("No tools discovered.")
+        return
+
+    for tool in tools:
+        tool_name = tool.get("tool_name", "unknown_tool")
+        with st.expander(tool_name):
+            st.write("**MCP family:**", tool.get("mcp_family"))
+            st.write("**Description:**", tool.get("description") or "No description")
+            render_json_expander("Required args", tool.get("required_args"), expanded=False)
+            render_json_expander("Optional args", tool.get("optional_args"), expanded=False)
+            render_json_expander("Input schema", tool.get("input_schema"), expanded=False)
+
+
+def _render_executed_tools(tool_results: list[dict] | None) -> None:
+    st.subheader("⚙️ Tools Executed in this Prompt")
+
+    if not tool_results:
+        st.info("No tools executed in this prompt.")
+        return
+
+    for idx, tool in enumerate(tool_results, start=1):
+        tool_name = tool.get("tool_name", "unknown_tool")
+        ok = tool.get("ok", False)
+        title = f"{idx}. {tool_name} {'✅' if ok else '❌'}"
+
+        with st.expander(title):
+            st.write("**MCP family:**", tool.get("mcp_family"))
+            render_json_expander("Arguments", tool.get("arguments"), expanded=True)
+            render_json_expander("Result", tool.get("result"), expanded=False)
+            if tool.get("error"):
+                st.error(tool.get("error"))
+
+
+def render_dynamic_trace(
+    decision_trace: list[dict] | None,
+    trace_key_prefix: str = "",
+) -> None:
     if not decision_trace:
         st.info("No workflow trace available for this turn.")
         return
 
     sequence = _build_step_sequence(decision_trace)
 
-    executed_tool_steps = [s for s in sequence if s["label"].startswith("Tool Execution:")]
+    executed_tool_steps = [
+        s for s in sequence if s["label"].startswith("Tool Execution:")
+    ]
     final_steps = [s for s in sequence if s["label"].startswith("Final Output")]
     planner_loop_count = len(set(s["loop_index"] for s in sequence if s.get("loop_index")))
 
@@ -271,13 +366,28 @@ def render_dynamic_trace(decision_trace: list[dict] | None, trace_key_prefix: st
     with top_cols[1]:
         _render_stage_box("2. Extraction", STATIC_STAGE_COLORS["state_extraction"], "Runs once")
     with top_cols[2]:
-        _render_stage_box("3. Planner Loop", STATIC_STAGE_COLORS["planner_loop"], f"Repeated {planner_loop_count} time(s)")
+        _render_stage_box(
+            "3. Planner Loop",
+            STATIC_STAGE_COLORS["planner_loop"],
+            f"Repeated {planner_loop_count} time(s)",
+        )
     with top_cols[3]:
-        _render_stage_box("4. Tool Execution", STATIC_STAGE_COLORS["tool_execution"], f"{len(executed_tool_steps)} step(s)")
+        _render_stage_box(
+            "4. Tool Execution",
+            STATIC_STAGE_COLORS["tool_execution"],
+            f"{len(executed_tool_steps)} step(s)",
+        )
     with top_cols[4]:
-        _render_stage_box("5. Final Output", STATIC_STAGE_COLORS["final_output"], f"{len(final_steps)} step(s)")
+        _render_stage_box(
+            "5. Final Output",
+            STATIC_STAGE_COLORS["final_output"],
+            f"{len(final_steps)} step(s)",
+        )
 
-    tab_labels = [f"{_step_icon(step['label'])} {idx}. {step['label']}" for idx, step in enumerate(sequence, start=1)]
+    tab_labels = [
+        f"{_step_icon(step['label'])} {idx}. {step['label']}"
+        for idx, step in enumerate(sequence, start=1)
+    ]
     tabs = st.tabs(tab_labels)
 
     for idx, (tab, step) in enumerate(zip(tabs, sequence), start=1):
@@ -297,7 +407,11 @@ def render_dynamic_trace(decision_trace: list[dict] | None, trace_key_prefix: st
             elif step_type == "input_understanding":
                 analysis = payload.get("input_analysis", {})
                 st.write("**Normalized text:**", analysis.get("normalized_text"))
-                render_json_expander("Detected intent hints", analysis.get("keyword_hints"), expanded=True)
+                render_json_expander(
+                    "Detected intent hints",
+                    analysis.get("keyword_hints"),
+                    expanded=True,
+                )
 
             elif step_type == "state_extraction":
                 st.write("**Extracted slots:**")
@@ -306,7 +420,11 @@ def render_dynamic_trace(decision_trace: list[dict] | None, trace_key_prefix: st
                 render_json_expander("Full state after extraction", payload.get("state_after"))
 
             elif step_type == "live_tool_catalog":
-                render_json_expander("Available live tools", payload.get("available_tools", []), expanded=False)
+                render_json_expander(
+                    "Available live tools",
+                    payload.get("available_tools", []),
+                    expanded=False,
+                )
 
             elif step_type == "planner_prompt":
                 st.text_area(
@@ -322,6 +440,13 @@ def render_dynamic_trace(decision_trace: list[dict] | None, trace_key_prefix: st
                 st.code(payload.get("raw_response", ""), language="json")
                 st.write("**Parsed decision:**")
                 st.json(payload.get("parsed_decision", {}))
+
+            elif step_type == "argument_enrichment":
+                render_json_expander(
+                    "Arguments enriched from state",
+                    payload.get("enriched_arguments"),
+                    expanded=True,
+                )
 
             elif step_type == "input_requirements_check":
                 explanation = payload.get("validation_explanation", {})
@@ -422,14 +547,19 @@ def render_assistant_message(msg: dict) -> None:
     if msg.get("decision_trace") is not None:
         with st.expander("How the workflow moved through the system", expanded=False):
             trace_key_prefix = str(msg.get("message_id", "dynamic_msg"))
-            render_dynamic_trace(msg["decision_trace"], trace_key_prefix=trace_key_prefix)
+            render_dynamic_trace(
+                msg["decision_trace"],
+                trace_key_prefix=trace_key_prefix,
+            )
 
     render_json_expander("Tool results", msg.get("tool_results"))
     render_json_expander("Session state", msg.get("state"))
 
+    _render_executed_tools(msg.get("tool_results"))
+
 
 def render_page(*, provider: str, temperature: float, session_placeholder) -> None:
-    st.subheader("Dynamic MCP Lab / LLM-routed MCP")
+    st.subheader("Dynamic MCP Lab")
     st.caption(
         "The LLM decides whether to ask the user, call an MCP tool, or answer directly. "
         "Python validates and executes the chosen action."
@@ -437,10 +567,13 @@ def render_page(*, provider: str, temperature: float, session_placeholder) -> No
 
     col1, col2 = st.columns([1, 1])
 
-    with col1:
-        render_json_expander("Current session state", st.session_state.travel_state.to_dict())
+    # with col1:
+    #     render_json_expander(
+    #         "Current session state",
+    #         st.session_state.travel_state.to_dict(),
+    #     )
 
-    with col2:
+    with col1:
         with st.expander("What this lab shows", expanded=False):
             st.markdown(
                 """
@@ -457,6 +590,7 @@ Static stages:
 Repeated loop stages:
 - Planner Prompt
 - Planner Response
+- Argument Enrichment
 - Input Requirements Check
 - Validation Result
 - Missing-Field Prompt
@@ -464,6 +598,10 @@ Repeated loop stages:
 - Action Decision
 """
             )
+
+    with st.sidebar:
+        st.divider()
+        _render_available_tools()
 
     for msg in st.session_state.messages_dynamic:
         with st.chat_message(msg["role"]):
