@@ -26,28 +26,61 @@ def _normalize_mcp_result(result: Any) -> dict[str, Any]:
             except Exception:
                 return {"text": joined}
 
+    structured = getattr(result, "structuredContent", None)
+    if structured is not None:
+        return structured
+
     return {"raw": str(result)}
 
 
+def _normalize_tool(tool: Any) -> dict[str, Any]:
+    input_schema = getattr(tool, "inputSchema", None) or {}
+    properties = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+    required = input_schema.get("required", []) if isinstance(input_schema, dict) else []
+
+    return {
+        "tool_name": getattr(tool, "name", ""),
+        "mcp_family": "weather_mcp",
+        "description": getattr(tool, "description", "") or "",
+        "required_args": list(required),
+        "optional_args": [k for k in properties.keys() if k not in required],
+        "input_schema": input_schema,
+    }
+
+
 class WeatherMCPClient(MCPClientBase):
-    async def call_tool(self, tool_name: str, arguments: dict) -> ToolResult:
-        server_params = StdioServerParameters(
+    def _server_params(self) -> StdioServerParameters:
+        return StdioServerParameters(
             command="poetry",
             args=["run", "python", "-m", "mcp_weather_server"],
         )
 
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
+    async def list_tools(self) -> list[dict[str, Any]]:
+        try:
+            async with stdio_client(self._server_params()) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools_result = await session.list_tools()
+                    return [_normalize_tool(tool) for tool in tools_result.tools]
+        except Exception:
+            return []
 
-                tools_result = await session.list_tools()
-                print("[Weather MCP Tools]", tools_result)
-
-                result = await session.call_tool(tool_name, arguments)
-                parsed = _normalize_mcp_result(result)
-                print("[Weather MCP Parsed Result]", parsed)
-
-        return ToolResult(
-            tool_name=tool_name,
-            content=parsed,
-        )
+    async def call_tool(self, tool_name: str, arguments: dict) -> ToolResult:
+        try:
+            async with stdio_client(self._server_params()) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    result = await session.call_tool(tool_name, arguments)
+                    parsed = _normalize_mcp_result(result)
+                    return ToolResult(
+                        tool_name=tool_name,
+                        content=parsed,
+                    )
+        except Exception as exc:
+            return ToolResult(
+                tool_name=tool_name,
+                content={
+                    "error": str(exc),
+                    "note": "Weather MCP failed.",
+                },
+            )
