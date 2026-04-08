@@ -8,6 +8,8 @@ class TravelSessionState:
     user_id: str
     trip_days: Optional[int] = None
     date_text: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     city: Optional[str] = None
     budget_amount: Optional[float] = None
     budget_currency: Optional[str] = None
