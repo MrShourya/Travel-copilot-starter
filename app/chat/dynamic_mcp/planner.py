@@ -28,14 +28,17 @@ You are a controller that decides what happens next.
 - Do not ask vague questions like "Please provide more details".
 - Ask only for the missing fields needed for the next useful step.
 - If enough information exists, call exactly one tool.
-- Do not call multiple tools in one decision.
-- Prefer calling the most useful next tool, not every possible tool.
-- If you already have enough information and tools are not needed, choose action="answer".
+- Prefer answering once the needed distinct tools have already run.
+- Do not call the same tool again if it has already been executed successfully for the same request.
+- For itinerary requests, once trip summary information is available, prefer answering instead of calling more tools unless the user explicitly asked for weather or currency conversion.
+- You may call multiple different tools across multiple loops if they add value.
+- For weather-only requests, once the weather tool has run, answer immediately.
+- For currency conversion requests, once the currency tool has run, answer immediately.
 - Return valid JSON only.
 - Do not include markdown fences.
 - If session_state already contains usable values, do not ask the user to repeat or confirm them.
 - Relative dates like "next week", "tomorrow", "this weekend", or weekdays should be treated as usable when session_state contains derived start_date/end_date.
-- For currency conversion requests, prefer calling the currency tool directly instead of asking for travel fields like city or trip duration.
+
 
 ## Current user request
 {user_request}
@@ -119,9 +122,36 @@ Write the final user-facing answer using the collected tool results.
 ## Planner draft answer
 {planner_draft_answer}
 
+STRICT INSTRUCTIONS:
+
+Use these instructions only when planning a trip/itenary.
+1. If the user is planning a trip:
+   - You MUST generate a detailed DAY-WISE itinerary
+   - Format:
+
+Day 1:
+- Morning:
+- Afternoon:
+- Evening:
+
+Day 2:
+...
+
+2. Do NOT give generic summaries.
+3. Do NOT ask follow-up questions if enough data exists.
+4. Use real places and realistic suggestions.
+5. Consider:
+   - city
+   - number of days
+   - budget
+   - weather (if available)
+
+6. Keep it structured and easy to read.
+
 Rules:
 - Use the tool results when available.
 - Be clear, concise, and directly helpful.
+- If the question is not about planning, respond with only the answer based on the inputs.
 - Do not mention internal planner loops, validation, or MCP internals.
 - If tool results are incomplete, answer honestly and avoid inventing facts.
 - Return plain text only.

@@ -6,22 +6,22 @@ from app.chat.agent import answer_user
 from app.chat.session_state import TravelSessionState
 from app.ui.rendering_common import render_json_expander, render_markdown_with_table
 
+
 def _step_status_icon(step: dict) -> str:
     decision = step.get("decision", {})
     result = step.get("result_preview")
 
     if decision and decision.get("skipped"):
-        return "🟡"
+        return "⏭️"
 
     if isinstance(result, dict) and result.get("error"):
-        return "🔴"
+        return "❌"
 
-    return "🟢"
+    return "✅"
 
 
 def _step_label(step: dict) -> str:
     step_name = step.get("step", "")
-
     mapping = {
         "state_update": "State",
         "flow_gate": "Flow Gate",
@@ -31,7 +31,6 @@ def _step_label(step: dict) -> str:
         "weather_lookup": "Weather",
         "currency_lookup": "Currency",
     }
-
     return mapping.get(step_name, step_name.replace("_", " ").title())
 
 
@@ -41,17 +40,16 @@ def _render_step_detail(step: dict) -> None:
     result = step.get("result_preview")
 
     if step_name == "state_update":
-        st.markdown("### 🧠 State Parsing")
+        st.markdown("### State Parsing")
         st.write("The app first extracted structured travel information from your message.")
         st.write("**Flow stage after parse:**", step.get("flow_stage_after_parse"))
-
         state = step.get("state_snapshot")
         if state:
             st.json(state)
         return
 
     if step_name == "flow_gate":
-        st.markdown("### 🚦 Flow Gate")
+        st.markdown("### Flow Gate")
         st.write(step.get("reason", ""))
         if step.get("flow_stage"):
             st.write("**Flow stage:**", step.get("flow_stage"))
@@ -62,7 +60,6 @@ def _render_step_detail(step: dict) -> None:
     if decision:
         st.write("**Why this step happened:**")
         st.info(decision.get("reason", "No reason captured."))
-
         st.write("**MCP family:**", decision.get("mcp_family"))
         st.write("**Tool selected:**", decision.get("tool_name"))
         st.write("**Skipped:**", decision.get("skipped"))
@@ -90,9 +87,8 @@ def render_decision_trace(decision_trace: dict | None) -> None:
         st.info("No decision steps were recorded.")
         return
 
-    st.markdown("## 🧭 Decision Flow")
+    st.markdown("## Decision Flow")
 
-    # Horizontal visual summary
     cols = st.columns(len(steps))
     for idx, step in enumerate(steps):
         icon = _step_status_icon(step)
@@ -102,18 +98,16 @@ def render_decision_trace(decision_trace: dict | None) -> None:
             st.markdown(
                 f"""
 <div style="text-align:center; padding:10px; border:1px solid #ddd; border-radius:12px; min-height:90px;">
-    <div style="font-size:28px;">{icon}</div>
-    <div style="font-weight:600;">{label}</div>
-    <div style="font-size:12px; color:gray;">Step {idx + 1}</div>
+    <div style="font-size:24px;">{icon}</div>
+    <div style="font-size:13px; font-weight:600;">{label}</div>
+    <div style="font-size:12px; opacity:0.7;">Step {idx + 1}</div>
 </div>
 """,
                 unsafe_allow_html=True,
             )
 
-    st.markdown("")
     st.caption("Move left to right through the execution steps below.")
 
-    # Tabs per step
     tab_labels = [f"{_step_status_icon(step)} {_step_label(step)}" for step in steps]
     tabs = st.tabs(tab_labels)
 
@@ -121,8 +115,9 @@ def render_decision_trace(decision_trace: dict | None) -> None:
         with tab:
             _render_step_detail(step)
 
-    with st.expander("🧪 Full Raw Trace (Debug)", expanded=False):
+    with st.expander("Full Raw Trace (Debug)", expanded=False):
         st.json(decision_trace)
+
 
 def render_assistant_message(msg: dict) -> None:
     render_markdown_with_table(msg["content"])
@@ -175,13 +170,13 @@ def render_page(*, provider: str, temperature: float, session_placeholder) -> No
             session_placeholder.json(st.session_state.travel_state.to_dict())
 
             assistant_message = {
-                "message_id": f"dynamic_{len(st.session_state.messages_dynamic)}",
+                "message_id": f"deterministic_{len(st.session_state.messages_deterministic)}",
                 "role": "assistant",
                 "content": result["answer"],
-                "response_type": result.get("response_type"),
                 "decision_trace": result.get("decision_trace"),
-                "tool_results": result.get("tool_results"),
+                "tool_context": result.get("tool_context"),
                 "state": result.get("state"),
+                "prompt_meta": result.get("prompt_meta"),
             }
 
             render_assistant_message(assistant_message)

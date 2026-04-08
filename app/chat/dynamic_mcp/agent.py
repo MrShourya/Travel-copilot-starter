@@ -14,7 +14,7 @@ from app.chat.session_state import TravelSessionState
 from app.chat.state_manager import derive_start_end_dates, update_state_from_user_query
 
 
-MAX_DYNAMIC_MCP_STEPS = 5
+MAX_DYNAMIC_MCP_STEPS = 10
 
 
 def _trace_step(
@@ -38,6 +38,7 @@ def _extract_arg_provenance(
     raw_user_query: str,
 ) -> dict:
     provenance = {}
+
     state_keys = set(state_dict.keys())
     lowered_query = raw_user_query.lower()
 
@@ -67,10 +68,10 @@ def _summarize_user_input(user_query: str) -> dict:
     lowered = user_query.lower()
 
     keywords = {
-        "itinerary": "itinerary" in lowered or "trip" in lowered,
+        "itinerary": "itinerary" in lowered or "trip" in lowered or "plan" in lowered,
         "weather": "weather" in lowered or "forecast" in lowered,
         "budget": "budget" in lowered or "under" in lowered,
-        "currency": "convert" in lowered or "currency" in lowered,
+        "currency": "convert" in lowered or "currency" in lowered or "inr" in lowered or "usd" in lowered or "eur" in lowered or "aed" in lowered,
         "packing": "packing" in lowered,
     }
 
@@ -107,13 +108,14 @@ def _compact_trace(decision_trace):
             "action_decision",
             "tool_execution",
             "final_answer_response",
+            "duplicate_tool_blocked",
         ]:
             compact.append({
                 "step_type": step_type,
                 "summary": str(step.get("payload"))[:400],
             })
 
-    return compact[-6:]
+    return compact[-8:]
 
 
 def _compact_tool_results(results):
@@ -126,7 +128,7 @@ def _compact_tool_results(results):
                 "summary": str(r.get("result"))[:500],
             }
         )
-    return compact[-4:]
+    return compact[-6:]
 
 
 def _compact_tools(tools):
@@ -155,6 +157,27 @@ def _compact_state(state):
         "target_currency": s.get("target_currency"),
         "flow_stage": s.get("flow_stage"),
     }
+
+
+def _tool_fingerprint(tool_name: str | None, arguments: dict | None) -> tuple:
+    normalized_args = tuple(sorted((arguments or {}).items()))
+    return (tool_name, normalized_args)
+
+
+def _already_executed_same_tool(tool_name: str | None, arguments: dict | None, tool_results: list[dict]) -> bool:
+    candidate = _tool_fingerprint(tool_name, arguments)
+
+    for result in tool_results:
+        if not result.get("ok"):
+            continue
+        previous = _tool_fingerprint(
+            result.get("tool_name"),
+            result.get("arguments"),
+        )
+        if previous == candidate:
+            return True
+
+    return False
 
 
 async def answer_user_dynamic(
@@ -188,7 +211,6 @@ async def answer_user_dynamic(
 
     state = update_state_from_user_query(state, user_query)
 
-    # Safety normalization if date_text exists but start/end are still missing
     if state.date_text and (not state.start_date or not state.end_date):
         start_date, end_date = derive_start_end_dates(state.date_text, state.trip_days)
         if start_date:
@@ -302,7 +324,22 @@ async def answer_user_dynamic(
             enriched_args = dict(decision.arguments or {})
             state_dict = state.to_dict()
 
-            allowed_fields = {"city", "trip_days", "start_date", "end_date", "date_text", "budget_amount", "budget_currency", "target_currency", "base", "symbols"}
+            allowed_fields = {
+                "city",
+                "trip_days",
+                "start_date",
+                "end_date",
+                "date_text",
+                "budget_amount",
+                "budget_currency",
+                "target_currency",
+                "base",
+                "symbols",
+                "amount",
+                "from_currency",
+                "to_currency",
+                "currency",
+            }
 
             for key, value in state_dict.items():
                 if key in allowed_fields and key not in enriched_args and value is not None:
@@ -318,6 +355,68 @@ async def answer_user_dynamic(
                     enriched_arguments=enriched_args,
                 )
             )
+
+            if _already_executed_same_tool(decision.tool_name, decision.arguments, tool_results):
+                decision_trace.append(
+                    _trace_step(
+                        "duplicate_tool_blocked",
+                        f"Duplicate tool call blocked at loop {loop_index}",
+                        loop_index=loop_index,
+                        tool_name=decision.tool_name,
+                        arguments=decision.arguments,
+                    )
+                )
+
+                try:
+                    final_answer_result = await generate_final_answer(
+                        user_request=user_query,
+                        session_state=_compact_state(state),
+                        tool_results=_compact_tool_results(tool_results),
+                        planner_reason=f"Tool {decision.tool_name} had already been executed with the same arguments.",
+                        planner_draft_answer="",
+                        provider=provider,
+                    )
+                    final_answer_text = final_answer_result["final_answer"]
+
+                    decision_trace.append(
+                        _trace_step(
+                            "final_answer_prompt",
+                            "Prompt built to generate the final answer",
+                            prompt_text=final_answer_result["rendered_prompt"],
+                        )
+                    )
+
+                    decision_trace.append(
+                        _trace_step(
+                            "final_answer_response",
+                            "LLM generated the final user-facing answer",
+                            raw_response=final_answer_result["raw_response"],
+                            answer=final_answer_text,
+                        )
+                    )
+                except Exception:
+                    final_answer_text = (
+                        f"I already executed {decision.tool_name} with the same inputs, so I stopped to avoid a loop."
+                    )
+
+                decision_trace.append(
+                    _trace_step(
+                        "final_output",
+                        "Workflow ended because a duplicate tool call was blocked",
+                        answer=final_answer_text,
+                        response_type="answer",
+                    )
+                )
+
+                return {
+                    "mode": "dynamic_mcp",
+                    "response_type": "answer",
+                    "answer": final_answer_text,
+                    "decision_trace": decision_trace,
+                    "tool_results": tool_results,
+                    "state": state.to_dict(),
+                    "flow_stage": state.flow_stage,
+                }
 
         validation_explanation = explain_validation(decision, available_tools)
 

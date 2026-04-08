@@ -52,7 +52,7 @@ def infer_date_text(user_query: str) -> str | None:
     return None
 
 
-def _resolve_relative_date(date_text: str) -> datetime.date | None:
+def _resolve_relative_date(date_text: str):
     today = datetime.utcnow().date()
     normalized = date_text.lower().strip()
 
