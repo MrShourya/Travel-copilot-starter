@@ -33,6 +33,9 @@ You are a controller that decides what happens next.
 - If you already have enough information and tools are not needed, choose action="answer".
 - Return valid JSON only.
 - Do not include markdown fences.
+- If session_state already contains usable values, do not ask the user to repeat or confirm them.
+- Relative dates like "next week", "tomorrow", "this weekend", or weekdays should be treated as usable when session_state contains derived start_date/end_date.
+- For currency conversion requests, prefer calling the currency tool directly instead of asking for travel fields like city or trip duration.
 
 ## Current user request
 {user_request}
@@ -90,6 +93,9 @@ Rules:
 - Make the question natural and specific.
 - Do not mention JSON, validation, schemas, or internal system details.
 - Return plain text only.
+- If session_state already contains usable values, do not ask the user to repeat or confirm them.
+- Relative dates like "next week", "tomorrow", "this weekend", or weekdays should be treated as usable when session_state contains derived start_date/end_date.
+- For currency conversion requests, prefer calling the currency tool directly instead of asking for travel fields like city or trip duration.
 """.strip()
 
 
@@ -119,6 +125,9 @@ Rules:
 - Do not mention internal planner loops, validation, or MCP internals.
 - If tool results are incomplete, answer honestly and avoid inventing facts.
 - Return plain text only.
+- If session_state already contains usable values, do not ask the user to repeat or confirm them.
+- Relative dates like "next week", "tomorrow", "this weekend", or weekdays should be treated as usable when session_state contains derived start_date/end_date.
+- For currency conversion requests, prefer calling the currency tool directly instead of asking for travel fields like city or trip duration.
 """.strip()
 
 

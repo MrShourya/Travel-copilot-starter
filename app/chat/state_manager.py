@@ -23,12 +23,24 @@ def extract_explicit_date(user_query: str) -> str | None:
         return None
 
 
+def extract_weekday(user_query: str) -> str | None:
+    match = re.search(
+        r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+        user_query.lower(),
+    )
+    return match.group(1) if match else None
+
+
 def infer_date_text(user_query: str) -> str | None:
     q = user_query.lower()
 
     explicit_date = extract_explicit_date(user_query)
     if explicit_date:
         return explicit_date
+
+    weekday = extract_weekday(user_query)
+    if weekday:
+        return weekday
 
     if "next week" in q:
         return "next week"
@@ -40,17 +52,58 @@ def infer_date_text(user_query: str) -> str | None:
     return None
 
 
+def _resolve_relative_date(date_text: str) -> datetime.date | None:
+    today = datetime.utcnow().date()
+    normalized = date_text.lower().strip()
+
+    if normalized == "tomorrow":
+        return today + timedelta(days=1)
+
+    if normalized == "next week":
+        days_ahead = 7 - today.weekday()
+        if days_ahead <= 0:
+            days_ahead += 7
+        return today + timedelta(days=days_ahead)
+
+    if normalized == "this weekend":
+        days_ahead = (5 - today.weekday()) % 7
+        return today + timedelta(days=days_ahead)
+
+    weekdays = {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
+    }
+    if normalized in weekdays:
+        target = weekdays[normalized]
+        days_ahead = (target - today.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        return today + timedelta(days=days_ahead)
+
+    return None
+
+
 def derive_start_end_dates(date_text: str | None, trip_days: int | None) -> tuple[str | None, str | None]:
     if not date_text:
         return None, None
 
+    start_dt = None
+
     try:
         start_dt = datetime.strptime(date_text, "%Y-%m-%d").date()
     except ValueError:
+        start_dt = _resolve_relative_date(date_text)
+
+    if not start_dt:
         return None, None
 
     start_date = start_dt.isoformat()
-    end_date = None
+    end_date = start_date
 
     if trip_days and trip_days > 0:
         end_dt = start_dt + timedelta(days=trip_days - 1)
@@ -104,12 +157,12 @@ def update_state_from_user_query(
 
 
 def determine_flow_stage(state: TravelSessionState) -> str:
-    if not state.city:
+    if not state.city and not (state.budget_amount and state.budget_currency and state.target_currency):
         return "choose_place"
 
     has_dates = bool(state.date_text or state.start_date)
 
-    if not state.trip_days or not has_dates:
+    if state.city and (not state.trip_days or not has_dates):
         return "choose_dates"
 
     return "show_itinerary"
